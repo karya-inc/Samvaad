@@ -1,4 +1,4 @@
-package com.daiatech.samvaad
+package com.daiatech.samvaad.android
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
