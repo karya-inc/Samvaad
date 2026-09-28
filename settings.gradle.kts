@@ -20,4 +20,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Samvaad"
-include(":samvaad")
+include(":samvaad-android")
