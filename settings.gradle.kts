@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Samvaad"
 include(":samvaad-android")
+include(":samvaad-core")
