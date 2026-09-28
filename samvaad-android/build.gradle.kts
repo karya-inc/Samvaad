@@ -41,6 +41,8 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.timber)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
