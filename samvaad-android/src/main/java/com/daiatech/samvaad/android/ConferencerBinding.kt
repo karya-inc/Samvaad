@@ -60,18 +60,20 @@ class ConferencerBinding<M>(
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val localBinder = binder as? AbstractVoipCallService.LocalBinder ?: return
             service = localBinder.service()
-            bound = true
             startRelay()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             // Preserved guard: the bound foreground service died unexpectedly (OOM/system
             // kill). Flip to Idle regardless of whatever the last relayed state was -- there's
-            // nothing left to reconcile against.
-            bound = false
-            service = null
+            // nothing left to reconcile against. Also release our own binding registration
+            // explicitly (the framework doesn't do that for us just because the remote process
+            // died) -- otherwise it's a real leak: one bindService() call now permanently
+            // unmatched by an unbindService() call, and a later bindIfNeeded() would think we're
+            // still bound and skip rebinding entirely.
             relayJob?.cancel()
             relayJob = null
+            unbindIfNeeded()
             _uiState.value = ConferencerUiState.Idle()
         }
     }
@@ -101,7 +103,9 @@ class ConferencerBinding<M>(
         if (transientIdle) return
 
         _uiState.value = when (state) {
-            VoipCallState.Idle -> if (metadata != null) current else ConferencerUiState.Idle()
+            // metadata is always null here: transientIdle above already returned early for
+            // every case where state is Idle AND metadata != null.
+            VoipCallState.Idle -> ConferencerUiState.Idle()
             VoipCallState.Dialing, VoipCallState.Incoming, VoipCallState.Connecting ->
                 ConferencerUiState.Connecting(metadata)
             VoipCallState.Ongoing ->
@@ -123,11 +127,7 @@ class ConferencerBinding<M>(
             // that) -- the relaying *capability* must survive so the next call gets a fresh relay
             // via startRelay() above, even though this specific relayJob's Service instance is
             // about to actually be destroyed now that nothing's bound to it anymore.
-            if (bound) {
-                appContext.unbindService(connection)
-                bound = false
-            }
-            service = null
+            unbindIfNeeded()
             relayJob?.cancel()
             relayJob = null
         }
@@ -155,6 +155,11 @@ class ConferencerBinding<M>(
     /** Callee: user tapped Accept. Caller: user tapped Call. */
     fun acceptOrInitiate(metadata: M) {
         acceptedCallId = callId(metadata)
+        // Seed the metadata now, not just on the callee path (where onIncomingCall already did
+        // this): for the caller, this is the *only* place metadata is ever attached, and without
+        // it current.metadata() would stay null for the whole call -- every Connecting/Ongoing/
+        // Disconnecting/Error state a caller sees would silently carry meta = null.
+        _uiState.value = ConferencerUiState.Connecting(metadata)
         bindIfNeeded()
         val intent = Intent(appContext, serviceClass).apply {
             putExtra(AbstractVoipCallService.EXTRA_PROVIDER_ID, provider(metadata).id)
@@ -191,13 +196,32 @@ class ConferencerBinding<M>(
 
     private fun bindIfNeeded() {
         if (bound) return
-        appContext.bindService(Intent(appContext, serviceClass), connection, Context.BIND_AUTO_CREATE)
+        // Set eagerly, before the actual bindService() call, not just once onServiceConnected
+        // confirms it -- that callback lands asynchronously, so onIncomingCall() then
+        // acceptOrInitiate() shortly after (a real sequence: incoming call, user taps Accept)
+        // would otherwise both see bound == false and call bindService() twice, registering the
+        // same ServiceConnection with the framework twice for one eventual unbindService() call.
+        bound = true
+        val requested = appContext.bindService(
+            Intent(appContext, serviceClass),
+            connection,
+            Context.BIND_AUTO_CREATE,
+        )
+        if (!requested) bound = false // bindService() failed synchronously; nothing pending after all
+    }
+
+    private fun unbindIfNeeded() {
+        if (!bound) return
+        appContext.unbindService(connection)
+        bound = false
+        service = null
     }
 
     /** Call from the owning component's teardown, never from a UI event (endCall/decline). */
     fun destroy() {
         relayJob?.cancel()
-        if (bound) appContext.unbindService(connection)
+        relayJob = null
+        unbindIfNeeded()
         scope.cancel()
     }
 }
