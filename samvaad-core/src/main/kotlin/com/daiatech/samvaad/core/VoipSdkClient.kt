@@ -21,6 +21,13 @@ interface VoipSdkClient {
     fun toggleMic(enable: Boolean)
     fun isMicrophoneEnabled(): Boolean
 
+    /**
+     * Start or stop cloud recording, where the underlying SDK supports it. Not every provider
+     * necessarily does -- a no-op implementation is a valid choice for one that doesn't, same as
+     * how a provider without a real mute API could still satisfy [toggleMic] as a no-op.
+     */
+    fun setRecordingEnabled(enabled: Boolean)
+
     /** Release SDK resources. Called exactly once, when the owning component is torn down. */
     fun release()
 }

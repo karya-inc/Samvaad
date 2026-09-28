@@ -131,6 +131,10 @@ abstract class AbstractVoipCallService : Service() {
         scope.launch { sdkClient?.toggleMic(enable) }
     }
 
+    fun setRecordingEnabled(enabled: Boolean) {
+        scope.launch { sdkClient?.setRecordingEnabled(enabled) }
+    }
+
     fun isMicrophoneEnabled(): Boolean = try {
         sdkClient?.isMicrophoneEnabled() ?: false
     } catch (e: Exception) {

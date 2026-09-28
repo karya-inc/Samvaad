@@ -11,6 +11,7 @@ junitVersion = "1.2.1"
 espressoCore = "3.6.1"
 timber = "5.0.1"
 mockitoKotlin = "5.4.0"
+dailyClient = "0.38.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -28,6 +29,7 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutinesCore" }
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version.ref = "mockitoKotlin" }
+daily-client = { group = "co.daily", name = "client", version.ref = "dailyClient" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

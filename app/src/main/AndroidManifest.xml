@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Daily.co SDK requirements (docs.daily.co/reference/android/installation), trimmed to what
+         an audio-only, microphone-type foreground service actually needs: no CAMERA/media
+         projection permissions, since this sample never enables video. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:label="Samvaad Sample"
@@ -15,6 +25,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- foregroundServiceType="microphone", this sample's own choice: the library itself
+             declares none, per the settled decision that each consumer picks phoneCall vs
+             microphone for their own use case (ARCHITECTURE.md §8). -->
+        <service
+            android:name=".SampleVoipCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 
 </manifest>

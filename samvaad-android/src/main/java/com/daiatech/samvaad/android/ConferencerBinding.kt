@@ -181,6 +181,10 @@ class ConferencerBinding<M>(
         service?.toggleMic(enable)
     }
 
+    fun setRecordingEnabled(enabled: Boolean) {
+        service?.setRecordingEnabled(enabled)
+    }
+
     /**
      * Reattach to an already-running call after this process was killed and restarted with a
      * fresh [ConferencerBinding] instance (e.g. cold start while a call is still alive in the

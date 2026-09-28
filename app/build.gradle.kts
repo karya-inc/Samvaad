@@ -39,6 +39,8 @@ android {
 
 dependencies {
     implementation(project(":samvaad-android"))
+    implementation(libs.daily.client)
+    implementation(libs.timber)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
