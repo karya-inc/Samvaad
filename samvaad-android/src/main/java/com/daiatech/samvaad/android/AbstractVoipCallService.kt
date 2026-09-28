@@ -82,7 +82,14 @@ abstract class AbstractVoipCallService : Service() {
 
         val providerId = intent?.getStringExtra(EXTRA_PROVIDER_ID)
         val config = intent?.getStringExtra(EXTRA_CONFIG)
-        val role = intent?.getStringExtra(EXTRA_ROLE)?.let { CallRole.valueOf(it) }
+        val role = intent?.getStringExtra(EXTRA_ROLE)?.let { roleName ->
+            try {
+                CallRole.valueOf(roleName)
+            } catch (e: IllegalArgumentException) {
+                Timber.e(e, "Unrecognized CallRole extra: %s", roleName)
+                null
+            }
+        }
         if (providerId != null && config != null && role != null) {
             join(CallProvider(providerId), config, role)
         }
@@ -124,7 +131,12 @@ abstract class AbstractVoipCallService : Service() {
         scope.launch { sdkClient?.toggleMic(enable) }
     }
 
-    fun isMicrophoneEnabled(): Boolean = sdkClient?.isMicrophoneEnabled() ?: false
+    fun isMicrophoneEnabled(): Boolean = try {
+        sdkClient?.isMicrophoneEnabled() ?: false
+    } catch (e: Exception) {
+        Timber.e(e, "Exception querying VoipSdkClient microphone state")
+        false
+    }
 
     private fun startDurationTicker() {
         tickerJob?.cancel()
@@ -142,7 +154,14 @@ abstract class AbstractVoipCallService : Service() {
     override fun onDestroy() {
         tickerJob?.cancel()
         relayJob?.cancel()
-        sdkClient?.release()
+        // Not scope.launch{} -- release() must run synchronously here, before scope.cancel()
+        // below; a launched coroutine on Dispatchers.Main isn't guaranteed to run before the
+        // very next line executes and would race with (likely lose to) that cancel().
+        try {
+            sdkClient?.release()
+        } catch (e: Exception) {
+            Timber.e(e, "Exception releasing VoipSdkClient in onDestroy")
+        }
         scope.cancel()
         isRunning = false
         super.onDestroy()
