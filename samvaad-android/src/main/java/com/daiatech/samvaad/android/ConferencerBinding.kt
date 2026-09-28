@@ -185,6 +185,12 @@ class ConferencerBinding<M>(
         service?.setRecordingEnabled(enabled)
     }
 
+    /** Current mic state, read from the live SDK client -- not tracked separately by this class. */
+    fun isMicrophoneEnabled(): Boolean = service?.isMicrophoneEnabled() ?: false
+
+    /** Current recording state, read from the live SDK client -- not tracked separately by this class. */
+    fun isRecordingEnabled(): Boolean = service?.isRecordingEnabled() ?: false
+
     /**
      * Reattach to an already-running call after this process was killed and restarted with a
      * fresh [ConferencerBinding] instance (e.g. cold start while a call is still alive in the

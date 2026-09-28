@@ -135,6 +135,13 @@ abstract class AbstractVoipCallService : Service() {
         scope.launch { sdkClient?.setRecordingEnabled(enabled) }
     }
 
+    fun isRecordingEnabled(): Boolean = try {
+        sdkClient?.isRecordingEnabled() ?: false
+    } catch (e: Exception) {
+        Timber.e(e, "Exception querying VoipSdkClient recording state")
+        false
+    }
+
     fun isMicrophoneEnabled(): Boolean = try {
         sdkClient?.isMicrophoneEnabled() ?: false
     } catch (e: Exception) {

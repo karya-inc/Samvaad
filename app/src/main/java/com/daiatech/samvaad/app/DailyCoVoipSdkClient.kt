@@ -6,12 +6,19 @@ import co.daily.CallClientListener
 import co.daily.model.CallState
 import co.daily.model.Participant
 import co.daily.model.ParticipantLeftReason
+import co.daily.model.recording.RecordingStatus
+import co.daily.model.streaming.StreamId
 import com.daiatech.samvaad.core.CallRole
 import com.daiatech.samvaad.core.VoipCallState
 import com.daiatech.samvaad.core.VoipSdkClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -20,15 +27,22 @@ import timber.log.Timber
  * integration in karya-android-client's `feature/conferencer/.../dailyco/DailyCoManager.kt`,
  * trimmed down for a single-role (caller-only) sample: no leave-timeout guard, no debug-signal
  * telemetry, no automatic record-on-connect (recording here is the explicit, user-toggled
- * feature this sample is demonstrating, via [setRecordingEnabled]).
+ * feature this sample is demonstrating, via [setRecordingEnabled]). Does keep the one guard that
+ * isn't a nice-to-have: [leave] is always posted through [scope], never called synchronously from
+ * inside a Daily SDK callback -- karya-android-client's DailyCoManager documents this as having
+ * been observed to deadlock the leave() result callback on long calls.
  */
 class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
 
     private val appContext = context.applicationContext
     private val callClient = CallClient(appContext)
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _callState = MutableStateFlow<VoipCallState>(VoipCallState.Idle)
     override val callState: StateFlow<VoipCallState> = _callState.asStateFlow()
+
+    @Volatile
+    private var recording = false
 
     private val listener = object : CallClientListener {
         override fun onCallStateUpdated(state: CallState) {
@@ -76,13 +90,25 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
             if (remoteRemaining == 0) {
                 Timber.d("DailyCoVoipSdkClient: last remote participant left -- disconnecting")
                 _callState.value = VoipCallState.Disconnecting
-                leave()
+                // Posted, not called synchronously from inside this SDK callback: doing so risks
+                // re-entering the SDK before it's finished dispatching the current event, which
+                // karya-android-client's real DailyCoManager documents as having been observed to
+                // deadlock the leave() result callback on long calls.
+                scope.launch { leave() }
             }
         }
 
         override fun onError(message: String) {
             Timber.e("DailyCoVoipSdkClient: Daily SDK error: $message")
             _callState.value = VoipCallState.Error(message = message)
+        }
+
+        override fun onRecordingStarted(status: RecordingStatus) {
+            recording = true
+        }
+
+        override fun onRecordingStopped(streamId: StreamId) {
+            recording = false
         }
     }
 
@@ -162,6 +188,8 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
         }
     }
 
+    override fun isRecordingEnabled(): Boolean = recording
+
     override fun release() {
         try {
             callClient.removeListener(listener)
@@ -173,5 +201,6 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
         } catch (e: Exception) {
             Timber.e(e, "DailyCoVoipSdkClient: failed to release CallClient")
         }
+        scope.cancel()
     }
 }

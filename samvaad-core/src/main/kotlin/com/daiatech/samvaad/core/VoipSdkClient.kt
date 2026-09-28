@@ -27,6 +27,7 @@ interface VoipSdkClient {
      * how a provider without a real mute API could still satisfy [toggleMic] as a no-op.
      */
     fun setRecordingEnabled(enabled: Boolean)
+    fun isRecordingEnabled(): Boolean
 
     /** Release SDK resources. Called exactly once, when the owning component is torn down. */
     fun release()

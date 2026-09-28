@@ -153,8 +153,13 @@ private fun JoinMeetingScreen(
 
             is ConferencerUiState.Ongoing -> {
                 val durationSeconds by state.durationSeconds.collectAsState()
-                var micEnabled by remember { mutableStateOf(true) }
-                var recordingEnabled by remember { mutableStateOf(false) }
+                // Keyed on `state`, not a bare `remember` -- reads the SDK's real current values
+                // fresh every time a *new* Ongoing state is emitted (first entering the call, or
+                // reattaching after a config change/process restart to a call already in
+                // progress with mic/recording already toggled), rather than always resetting to
+                // hardcoded defaults regardless of actual state.
+                var micEnabled by remember(state) { mutableStateOf(binding.isMicrophoneEnabled()) }
+                var recordingEnabled by remember(state) { mutableStateOf(binding.isRecordingEnabled()) }
 
                 Text("In call — ${formatDuration(durationSeconds)}")
 
