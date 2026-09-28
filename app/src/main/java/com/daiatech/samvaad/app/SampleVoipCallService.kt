@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
+import androidx.core.app.NotificationCompat
 import com.daiatech.samvaad.android.AbstractVoipCallService
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.VoipSdkClient
@@ -36,7 +37,10 @@ class SampleVoipCallService : AbstractVoipCallService() {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-        return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+        // NotificationCompat, not the raw platform Notification.Builder(Context, String) --
+        // that 2-arg constructor is API 26+ only, and this module's minSdk is 23. NotificationCompat
+        // handles the pre/post-26 channel distinction internally.
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Samvaad sample call")
             .setContentText("Call in progress")
             .setSmallIcon(android.R.drawable.ic_menu_call)
