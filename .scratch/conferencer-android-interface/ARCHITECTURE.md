@@ -206,17 +206,30 @@ inline at each call site:
    **unable to start the foreground call service at all**. Fix is on the backend: add
    `android: { priority: 'high' }` to that message. Not yet applied; needs explicit go-ahead since it's a
    different repo/track than this Android library.
-4. **UNFIXED — `callStartedAtEpochMillis` in `AbstractVoipCallService` is never reset back to `null`.**
-   Found during a memory/resource-leak review of Samvaad's actual implementation (which otherwise matches
+4. **FIXED — `callStartedAtEpochMillis` in `AbstractVoipCallService` was never reset back to `null`.**
+   Found during a memory/resource-leak review of Samvaad's actual implementation (which otherwise matched
    this prototype's shape faithfully, including this gap — it was already present here, not introduced
    during adaptation). `startDurationTicker()`'s loop reads `callStartedAtEpochMillis ?: break` as if it
-   were a live safeguard that stops the ticker once the field goes back to null, but nothing in this file
-   ever nulls it — the ticker's only real exit paths are the explicit `tickerJob?.cancel()` calls (on
-   `Ended`/`Error`, and in `onDestroy()`). Not a live leak today (both real paths do cancel it correctly),
-   but the `?: break` is dead code, and there's no independent safeguard if some `VoipSdkClient`
-   implementation never emits a terminal state and the Service is never destroyed — an unbounded 1-second
-   ticker coroutine. **Proposed fix**: reset `callStartedAtEpochMillis = null` wherever the ticker is
-   cancelled, making the loop's own break condition live rather than decorative.
+   were a live safeguard that stops the ticker once the field goes back to null, but nothing nulled it —
+   the ticker's only real exit paths were the explicit `tickerJob?.cancel()` calls (on `Ended`/`Error`, and
+   in `onDestroy()`). Never a live leak in practice (both real paths did cancel it correctly), but the
+   `?: break` was dead code, with no independent safeguard if some `VoipSdkClient` implementation never
+   emitted a terminal state and the Service was never destroyed. Fixed in Samvaad by resetting
+   `callStartedAtEpochMillis = null` in the terminal-state branch, alongside `tickerJob?.cancel()`.
+5. **FIXED — two unconditional API-26+ calls in already-shipped Samvaad code, despite `minSdk = 23`.**
+   Found by explicitly auditing for this exact bug class after the first instance surfaced via a
+   Robolectric test failure. `SampleVoipCallService.buildNotification()` (the sample app) called the
+   platform `Notification.Builder(Context, String)` constructor directly — that overload doesn't exist
+   below API 26; fixed with `androidx.core.app.NotificationCompat.Builder`, which handles the pre/post-26
+   channel distinction internally. `ConferencerBinding.acceptOrInitiate()` (the library itself, already
+   part of the closed ticket for this file) called `Context.startForegroundService(Intent)` directly —
+   that method itself doesn't exist below API 26 either, and would have thrown `NoSuchMethodError` the
+   moment anyone tried to join a call on a real API 23-25 device; fixed with
+   `androidx.core.content.ContextCompat.startForegroundService`, which falls back to `startService()`
+   pre-26. Both fixes verified red-to-green against real Robolectric tests pinned to the affected API
+   level, not just reasoned about. Worth treating this as a standing category to keep auditing for, not a
+   one-off: any *directly* invoked (not `xCompat`-wrapped) Android framework API is a candidate until
+   checked against this module's actual declared `minSdk`.
 
 ## 8. Android platform constraints (verified against official docs, not memory — see README round for
    the raw fetches and confidence caveats)
