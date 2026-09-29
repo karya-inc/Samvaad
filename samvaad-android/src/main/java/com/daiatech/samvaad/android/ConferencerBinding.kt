@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
+import androidx.core.content.ContextCompat
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
 import com.daiatech.samvaad.core.VoipCallState
@@ -166,7 +167,11 @@ class ConferencerBinding<M>(
             putExtra(AbstractVoipCallService.EXTRA_CONFIG, joinConfig(metadata))
             putExtra(AbstractVoipCallService.EXTRA_ROLE, role.name)
         }
-        appContext.startForegroundService(intent)
+        // Not appContext.startForegroundService(intent) directly -- that method itself doesn't
+        // exist below API 26. ContextCompat.startForegroundService falls back to startService()
+        // pre-26, where the foreground-service background-start restrictions this is otherwise
+        // working around don't apply yet anyway.
+        ContextCompat.startForegroundService(appContext, intent)
     }
 
     fun declineOrEnd() {

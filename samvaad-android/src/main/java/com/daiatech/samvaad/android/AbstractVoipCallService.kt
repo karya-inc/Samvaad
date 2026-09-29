@@ -114,6 +114,9 @@ abstract class AbstractVoipCallService : Service() {
                 // the call.
                 if (state == VoipCallState.Ended || state is VoipCallState.Error) {
                     tickerJob?.cancel()
+                    // Reset so startDurationTicker()'s own `?: break` is a live safeguard, not
+                    // dead code, if this same Service instance's state ever churns further.
+                    callStartedAtEpochMillis = null
                     stopSelf()
                 }
             }

@@ -15,6 +15,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.android.controller.ServiceController
+import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLooper
 
 /**
@@ -79,6 +80,19 @@ class ConferencerBindingLeakTest {
         binding.acceptOrInitiate(TestMeta("call-1"))
 
         assertEquals(1, shadowApp.boundServiceConnections.size)
+    }
+
+    @Config(sdk = [23])
+    @Test
+    fun `acceptOrInitiate does not crash on this module's actual minSdk (API 23)`() {
+        // Regression test: this class used to call Context.startForegroundService(Intent)
+        // directly, a method that doesn't exist at all below API 26 -- a real device on this
+        // module's own declared minSdk (23) would have hit NoSuchMethodError the moment a call
+        // was ever initiated. Pinned to sdk=23 rather than relying on the module-wide
+        // robolectric.properties default (33) precisely so this doesn't silently regress if that
+        // default is ever bumped further.
+        val binding = newBinding()
+        binding.acceptOrInitiate(TestMeta("call-1"))
     }
 
     @Test
