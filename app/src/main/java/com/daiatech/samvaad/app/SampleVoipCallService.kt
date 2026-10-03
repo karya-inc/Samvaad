@@ -55,6 +55,15 @@ class SampleVoipCallService : AbstractVoipCallService() {
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentIntent(contentIntent)
             .setOngoing(true)
+            // The notification tied to an active startForeground() call is already
+            // non-dismissable by the user, regardless of channel importance -- setOngoing(true)
+            // plus the live foreground service are what the OS actually checks before letting a
+            // swipe remove it. CATEGORY_CALL is the separate, real fix here: it's the correct
+            // semantic category for a call notification (affects Do Not Disturb bypass
+            // eligibility and OEM/launcher call-UI treatment), on top of IMPORTANCE_DEFAULT below
+            // taking this out of the shade's "Silent" bucket -- an ongoing call showing as
+            // silent/low-priority was the real, legitimate thing to fix.
+            .setCategory(NotificationCompat.CATEGORY_CALL)
 
         // Captured once, not re-read via callState.value below -- the StateFlow could
         // theoretically change between two separate reads; branching on a single snapshot keeps
@@ -93,12 +102,16 @@ class SampleVoipCallService : AbstractVoipCallService() {
             NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
                 "Calls",
-                NotificationManager.IMPORTANCE_LOW,
+                NotificationManager.IMPORTANCE_DEFAULT,
             ),
         )
     }
 
     companion object {
-        private const val NOTIFICATION_CHANNEL_ID = "samvaad_sample_calls"
+        // _v2: a NotificationChannel's importance is locked once created on-device -- code
+        // changes to IMPORTANCE_DEFAULT never apply retroactively to an install that already
+        // created the old IMPORTANCE_LOW channel under the old id. A new id is the standard way
+        // to actually change a channel's settings for users who already have the app installed.
+        private const val NOTIFICATION_CHANNEL_ID = "samvaad_sample_calls_v2"
     }
 }
