@@ -5,6 +5,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import androidx.core.app.NotificationManagerCompat
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
 import com.daiatech.samvaad.core.NetworkQuality
@@ -61,7 +62,11 @@ abstract class AbstractVoipCallService : Service() {
     private val _callState = MutableStateFlow<VoipCallState>(VoipCallState.Idle)
     val callState: StateFlow<VoipCallState> = _callState.asStateFlow()
 
-    private var callStartedAtEpochMillis: Long? = null
+    /** Epoch millis when the call first became [VoipCallState.Ongoing], or null before/after.
+     * Read-only to subclasses (e.g. to call `NotificationCompat.Builder.setWhen()` for a live
+     * chronometer in [buildNotification]) -- only this class may set it. */
+    protected var callStartedAtEpochMillis: Long? = null
+        private set
     private val _durationSeconds = MutableStateFlow(0L)
     val durationSeconds: StateFlow<Long> = _durationSeconds.asStateFlow()
 
@@ -143,6 +148,12 @@ abstract class AbstractVoipCallService : Service() {
                     callStartedAtEpochMillis = null
                     stopSelf()
                 }
+                // Reposted once per genuine state transition (e.g. ringing -> Ongoing), not on
+                // every ticker tick -- a subclass wanting a live-ticking timer uses
+                // setUsesChronometer()/setWhen(callStartedAtEpochMillis) in buildNotification(),
+                // which the system itself ticks natively. No new coroutine/ticker needed here,
+                // and nothing new that could leak.
+                updateNotification()
             }
         }
         // Launched, not called synchronously, so an exception from a provider adapter's join()
@@ -174,6 +185,16 @@ abstract class AbstractVoipCallService : Service() {
     } catch (e: Exception) {
         Timber.e(e, "Exception querying VoipSdkClient microphone state")
         false
+    }
+
+    private fun updateNotification() {
+        try {
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification())
+        } catch (e: Exception) {
+            // e.g. POST_NOTIFICATIONS revoked mid-call on API 33+ -- must not crash the relay
+            // collector, which would silently kill call-state handling as collateral damage.
+            Timber.e(e, "Exception updating foreground notification")
+        }
     }
 
     private fun startDurationTicker() {

@@ -16,6 +16,18 @@ class TestVoipCallService : AbstractVoipCallService() {
     override val sdkClientFactory: VoipSdkClientFactory
         get() = (factory ?: FakeVoipSdkClientFactory(fakeClient)).also { factory = it }
 
-    override fun buildNotification(): Notification =
-        NotificationCompat.Builder(this, "test-channel").build()
+    var buildNotificationCallCount = 0
+        private set
+
+    /** Captured from [callStartedAtEpochMillis] on each [buildNotification] call -- this is the
+     * real access pattern a consumer subclass (e.g. to call setWhen() for a chronometer) uses;
+     * exposed here so tests can observe it without needing subclass access themselves. */
+    var lastSeenCallStartedAtEpochMillis: Long? = null
+        private set
+
+    override fun buildNotification(): Notification {
+        buildNotificationCallCount++
+        lastSeenCallStartedAtEpochMillis = callStartedAtEpochMillis
+        return NotificationCompat.Builder(this, "test-channel").build()
+    }
 }

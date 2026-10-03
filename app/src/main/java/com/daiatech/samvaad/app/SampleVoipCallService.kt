@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.daiatech.samvaad.android.AbstractVoipCallService
 import com.daiatech.samvaad.core.CallProvider
+import com.daiatech.samvaad.core.VoipCallState
 import com.daiatech.samvaad.core.VoipSdkClient
 import com.daiatech.samvaad.core.VoipSdkClientFactory
 import dagger.hilt.android.AndroidEntryPoint
@@ -49,13 +50,39 @@ class SampleVoipCallService : AbstractVoipCallService() {
         // NotificationCompat, not the raw platform Notification.Builder(Context, String) --
         // that 2-arg constructor is API 26+ only, and this module's minSdk is 23. NotificationCompat
         // handles the pre/post-26 channel distinction internally.
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Samvaad sample call")
-            .setContentText("Call in progress")
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentIntent(contentIntent)
             .setOngoing(true)
-            .build()
+
+        // Captured once, not re-read via callState.value below -- the StateFlow could
+        // theoretically change between two separate reads; branching on a single snapshot keeps
+        // this notification's text/chronometer self-consistent. No `else`: if VoipCallState ever
+        // gains a new case, this fails to compile until it's handled here -- exactly the kind of
+        // missing-branch bug (VoipCallState.Ended silently falling through to "Ringing...") this
+        // guards against now.
+        when (callState.value) {
+            VoipCallState.Ongoing ->
+                // setUsesChronometer + setWhen -- the system renders and ticks the elapsed-time
+                // text itself from here on. Deliberately not a hand-rolled per-second repost:
+                // this is the one call site reposting the notification (on this state
+                // transition), and nothing needs to run again every second just to keep a timer
+                // moving.
+                builder
+                    .setContentText("In call")
+                    .setUsesChronometer(true)
+                    .setWhen(callStartedAtEpochMillis ?: System.currentTimeMillis())
+
+            VoipCallState.Idle, VoipCallState.Dialing, VoipCallState.Incoming, VoipCallState.Connecting ->
+                builder.setContentText("Ringing...")
+
+            VoipCallState.Disconnecting -> builder.setContentText("Ending call...")
+            VoipCallState.Ended -> builder.setContentText("Call ended")
+            is VoipCallState.Error -> builder.setContentText("Call error")
+        }
+
+        return builder.build()
     }
 
     private fun ensureNotificationChannel() {
