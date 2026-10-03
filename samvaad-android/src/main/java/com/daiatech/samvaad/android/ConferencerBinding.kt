@@ -8,6 +8,7 @@ import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
+import com.daiatech.samvaad.core.NetworkQuality
 import com.daiatech.samvaad.core.VoipCallState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,7 +113,11 @@ class ConferencerBinding<M>(
             VoipCallState.Dialing, VoipCallState.Incoming, VoipCallState.Connecting ->
                 ConferencerUiState.Connecting(metadata)
             VoipCallState.Ongoing ->
-                ConferencerUiState.Ongoing(metadata, service?.durationSeconds ?: MutableStateFlow(0L))
+                ConferencerUiState.Ongoing(
+                    metadata,
+                    service?.durationSeconds ?: MutableStateFlow(0L),
+                    service?.networkQuality ?: MutableStateFlow(null),
+                )
             VoipCallState.Disconnecting -> ConferencerUiState.Disconnecting(metadata)
             VoipCallState.Ended -> ConferencerUiState.Idle()
             is VoipCallState.Error -> ConferencerUiState.Error(metadata, state.message)
@@ -277,7 +282,11 @@ sealed class ConferencerUiState<M> {
         override fun metadata() = meta
     }
 
-    data class Ongoing<M>(val meta: M?, val durationSeconds: StateFlow<Long>) : ConferencerUiState<M>() {
+    data class Ongoing<M>(
+        val meta: M?,
+        val durationSeconds: StateFlow<Long>,
+        val networkQuality: StateFlow<NetworkQuality?>,
+    ) : ConferencerUiState<M>() {
         override fun metadata() = meta
     }
 

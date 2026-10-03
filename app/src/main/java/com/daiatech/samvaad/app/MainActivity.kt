@@ -7,12 +7,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -25,13 +29,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.daiatech.samvaad.android.ConferencerBinding
 import com.daiatech.samvaad.android.ConferencerUiState
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
+import com.daiatech.samvaad.core.NetworkQuality
 
 /**
  * Sample app: enter a Daily.co meeting link, join it through the library's full stack
@@ -153,6 +160,7 @@ private fun JoinMeetingScreen(
 
             is ConferencerUiState.Ongoing -> {
                 val durationSeconds by state.durationSeconds.collectAsState()
+                val networkQuality by state.networkQuality.collectAsState()
                 // Keyed on `state`, not a bare `remember` -- reads the SDK's real current values
                 // fresh every time a *new* Ongoing state is emitted (first entering the call, or
                 // reattaching after a config change/process restart to a call already in
@@ -162,6 +170,15 @@ private fun JoinMeetingScreen(
                 var recordingEnabled by remember(state) { mutableStateOf(binding.isRecordingEnabled()) }
 
                 Text("In call — ${formatDuration(durationSeconds)}")
+
+                NetworkQualityIndicator(networkQuality)
+                if (networkQuality == NetworkQuality.BAD) {
+                    Text(
+                        "⚠ Bad network connection",
+                        color = Color(0xFFC62828),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Microphone")
@@ -207,6 +224,31 @@ private fun JoinMeetingScreen(
                 Text("Incoming call (unused in this sample)")
             }
         }
+    }
+}
+
+/**
+ * Prototype for wayfinder ticket "Prototype the sample app display" (network-health map): a plain
+ * dot + label, not a library component -- the library stays UI-free (destination decision), this
+ * is purely the sample app's own Compose UI, deliberately simple since it's a demo.
+ */
+@Composable
+private fun NetworkQualityIndicator(quality: NetworkQuality?) {
+    val (color, label) = when (quality) {
+        NetworkQuality.GOOD -> Color(0xFF2E7D32) to "Good"
+        NetworkQuality.POOR -> Color(0xFFF9A825) to "Poor"
+        NetworkQuality.BAD -> Color(0xFFC62828) to "Bad"
+        // No reading available yet -- either the first poll hasn't landed, or this provider
+        // doesn't implement the signal at all; the UI can't tell which (see CONTEXT.md), so it
+        // shows a neutral dash rather than guessing.
+        null -> Color.Gray to "—"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(modifier = Modifier.size(12.dp).background(color = color, shape = CircleShape))
+        Text("Network: $label")
     }
 }
 

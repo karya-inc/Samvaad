@@ -13,6 +13,8 @@ A design spec for adding provider-agnostic network-quality reporting to the Samv
 ## Decisions so far
 
 - [Polling location and cadence](./issues/01-polling-location-and-cadence.md): reuse `startDurationTicker()`'s existing 1s loop (no separate ticker); new `networkQuality: StateFlow<NetworkQuality?>` parallel to `durationSeconds`, same Ongoing→Ended/Error lifecycle, freezes at its last reading rather than resetting to null.
+- [Surface through ConferencerBinding](./issues/02-surface-through-conferencer-binding.md): `networkQuality` becomes a new field on `ConferencerUiState.Ongoing`, a direct reference to the Service's StateFlow -- found to exactly match `durationSeconds`'s existing pattern, no new relay machinery.
+- [Prototype the sample app display](./issues/03-prototype-sample-app-display.md): a dot + label indicator in `MainActivity`, plus a red warning line specifically for `BAD`. Built, not yet eyeballed on a real device/emulator (none available in-session).
 
 ## Not yet specified
 
