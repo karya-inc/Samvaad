@@ -1,0 +1,13 @@
+package com.daiatech.samvaad.app
+
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class DailyModule {
+    @Binds
+    abstract fun bindDailyCallClientFactory(impl: DailyCallClientFactoryImpl): DailyCallClientFactory
+}

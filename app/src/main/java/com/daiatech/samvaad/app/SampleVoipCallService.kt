@@ -11,6 +11,8 @@ import com.daiatech.samvaad.android.AbstractVoipCallService
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.VoipSdkClient
 import com.daiatech.samvaad.core.VoipSdkClientFactory
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * The only per-app pieces [AbstractVoipCallService] requires: which SDK to use, and what the
@@ -21,10 +23,17 @@ import com.daiatech.samvaad.core.VoipSdkClientFactory
  * AndroidManifest.xml, this sample's own choice (`microphone`, per the library's settled decision
  * that the library itself stays silent on this).
  */
+@AndroidEntryPoint
 class SampleVoipCallService : AbstractVoipCallService() {
 
+    // Hilt-injected rather than constructed inline: the seam that lets DailyCoVoipSdkClient's
+    // CallClient dependency be swapped for a fake in a plain JVM unit test (see DailyCallClient.kt).
+    @Inject
+    lateinit var dailyCallClientFactory: DailyCallClientFactory
+
     override val sdkClientFactory: VoipSdkClientFactory = object : VoipSdkClientFactory {
-        override fun create(provider: CallProvider): VoipSdkClient = DailyCoVoipSdkClient(applicationContext)
+        override fun create(provider: CallProvider): VoipSdkClient =
+            DailyCoVoipSdkClient(applicationContext, dailyCallClientFactory)
     }
 
     override fun buildNotification(): Notification {

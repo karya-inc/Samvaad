@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".SamvaadSampleApp"
         android:allowBackup="true"
         android:label="Samvaad Sample"
         android:supportsRtl="true"

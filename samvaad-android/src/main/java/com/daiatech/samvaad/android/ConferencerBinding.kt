@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * A plain, final class held as a field and delegated to — NOT a base class to extend.
@@ -72,6 +73,7 @@ class ConferencerBinding<M>(
             // died) -- otherwise it's a real leak: one bindService() call now permanently
             // unmatched by an unbindService() call, and a later bindIfNeeded() would think we're
             // still bound and skip rebinding entirely.
+            Timber.e("ConferencerBinding: bound service disconnected unexpectedly (process killed?) -- resetting to Idle")
             relayJob?.cancel()
             relayJob = null
             unbindIfNeeded()
@@ -222,12 +224,26 @@ class ConferencerBinding<M>(
             connection,
             Context.BIND_AUTO_CREATE,
         )
-        if (!requested) bound = false // bindService() failed synchronously; nothing pending after all
+        if (!requested) {
+            // bindService() failed synchronously; nothing pending after all. Leaves `bound` reset
+            // so a later retry (e.g. the next acceptOrInitiate) doesn't permanently skip binding.
+            bound = false
+            Timber.e("ConferencerBinding: bindService() returned false -- call will not start")
+        }
     }
 
     private fun unbindIfNeeded() {
         if (!bound) return
-        appContext.unbindService(connection)
+        try {
+            appContext.unbindService(connection)
+        } catch (e: IllegalArgumentException) {
+            // "Service not registered" -- the framework's own bookkeeping already dropped this
+            // ServiceConnection (e.g. a prior unbind this class itself issued, or the process
+            // restarted). Logged, not rethrown: an uncaught exception here would otherwise
+            // propagate out of onServiceStateChanged/onServiceDisconnected/destroy() and crash
+            // the host, while `bound`/`service` below still need clearing regardless.
+            Timber.e(e, "ConferencerBinding: unbindService() failed -- already unregistered?")
+        }
         bound = false
         service = null
     }

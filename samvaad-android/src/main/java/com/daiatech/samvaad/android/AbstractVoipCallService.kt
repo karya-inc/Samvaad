@@ -97,8 +97,22 @@ abstract class AbstractVoipCallService : Service() {
     }
 
     private fun join(provider: CallProvider, config: String, role: CallRole) {
-        if (sdkClient != null) return // already joined for this service instance's lifetime
-        val client = sdkClientFactory.create(provider)
+        if (sdkClient != null) {
+            Timber.w("AbstractVoipCallService: join() called again on an already-joined service instance -- ignoring")
+            return
+        }
+        // Called directly from onStartCommand(), not inside scope.launch -- NOT covered by
+        // exceptionHandler below. An exception from a buggy sdkClientFactory (e.g. the
+        // underlying SDK's own construction failing) would otherwise crash onStartCommand and
+        // take the whole foreground service, and the host process, down with it.
+        val client = try {
+            sdkClientFactory.create(provider)
+        } catch (e: Exception) {
+            Timber.e(e, "AbstractVoipCallService: sdkClientFactory.create() threw -- cannot join this call")
+            _callState.value = VoipCallState.Error(cause = e, message = e.message)
+            stopSelf()
+            return
+        }
         sdkClient = client
 
         relayJob?.cancel()

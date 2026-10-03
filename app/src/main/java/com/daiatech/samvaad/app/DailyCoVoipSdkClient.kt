@@ -1,7 +1,6 @@
 package com.daiatech.samvaad.app
 
 import android.content.Context
-import co.daily.CallClient
 import co.daily.CallClientListener
 import co.daily.model.CallState
 import co.daily.model.Participant
@@ -31,11 +30,17 @@ import timber.log.Timber
  * isn't a nice-to-have: [leave] is always posted through [scope], never called synchronously from
  * inside a Daily SDK callback -- karya-android-client's DailyCoManager documents this as having
  * been observed to deadlock the leave() result callback on long calls.
+ *
+ * Talks to [DailyCallClient], not the real `co.daily.CallClient` directly -- see that interface's
+ * doc for why (a JVM-unit-testability constraint in the real SDK, not a style preference).
  */
-class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
+class DailyCoVoipSdkClient(
+    context: Context,
+    dailyCallClientFactory: DailyCallClientFactory,
+) : VoipSdkClient {
 
     private val appContext = context.applicationContext
-    private val callClient = CallClient(appContext)
+    private val callClient = dailyCallClientFactory.create(appContext)
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _callState = MutableStateFlow<VoipCallState>(VoipCallState.Idle)
@@ -54,7 +59,7 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
                     // case (matches the same quirk karya-android-client's DailyCoManager guards
                     // against).
                     val remoteAlreadyPresent = try {
-                        callClient.participants().all.any { !it.value.info.isLocal }
+                        callClient.remoteParticipantCount() > 0
                     } catch (e: Exception) {
                         Timber.e(e, "DailyCoVoipSdkClient: failed to read participants on joined")
                         false
@@ -82,7 +87,7 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
         override fun onParticipantLeft(participant: Participant, reason: ParticipantLeftReason) {
             if (participant.info.isLocal) return
             val remoteRemaining = try {
-                callClient.participants().all.count { !it.value.info.isLocal }
+                callClient.remoteParticipantCount()
             } catch (e: Exception) {
                 Timber.e(e, "DailyCoVoipSdkClient: failed to read participants on left")
                 0
@@ -120,18 +125,16 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
         Timber.d("DailyCoVoipSdkClient: joining $config")
         _callState.value = VoipCallState.Dialing
         try {
-            callClient.join(url = config) { result ->
-                result.error?.let { err ->
-                    Timber.e("DailyCoVoipSdkClient: error joining call: ${err.msg}")
-                    _callState.value = VoipCallState.Error(message = err.msg)
+            callClient.join(url = config) { errorMessage ->
+                if (errorMessage != null) {
+                    Timber.e("DailyCoVoipSdkClient: error joining call: $errorMessage")
+                    _callState.value = VoipCallState.Error(message = errorMessage)
                     return@join
                 }
-                result.success?.let {
-                    try {
-                        callClient.setInputsEnabled(microphone = true)
-                    } catch (e: Exception) {
-                        Timber.e(e, "DailyCoVoipSdkClient: failed to enable mic after join")
-                    }
+                try {
+                    callClient.setMicrophoneEnabled(true)
+                } catch (e: Exception) {
+                    Timber.e(e, "DailyCoVoipSdkClient: failed to enable mic after join")
                 }
             }
         } catch (e: Exception) {
@@ -142,10 +145,10 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
 
     override fun leave() {
         try {
-            callClient.leave { result ->
-                result.error?.let { err ->
-                    Timber.e("DailyCoVoipSdkClient: error leaving call: ${err.msg}")
-                    _callState.value = VoipCallState.Error(message = err.msg)
+            callClient.leave { errorMessage ->
+                if (errorMessage != null) {
+                    Timber.e("DailyCoVoipSdkClient: error leaving call: $errorMessage")
+                    _callState.value = VoipCallState.Error(message = errorMessage)
                 }
             }
         } catch (e: Exception) {
@@ -156,14 +159,14 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
 
     override fun toggleMic(enable: Boolean) {
         try {
-            callClient.setInputsEnabled(microphone = enable)
+            callClient.setMicrophoneEnabled(enable)
         } catch (e: Exception) {
             Timber.e(e, "DailyCoVoipSdkClient: failed to toggle mic enable=$enable")
         }
     }
 
     override fun isMicrophoneEnabled(): Boolean = try {
-        callClient.inputs().microphone.isEnabled
+        callClient.isMicrophoneEnabled()
     } catch (e: Exception) {
         Timber.e(e, "DailyCoVoipSdkClient: failed to read microphone state")
         false
@@ -172,12 +175,9 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
     override fun setRecordingEnabled(enabled: Boolean) {
         try {
             if (enabled) {
-                callClient.startRecording { result ->
-                    result.error?.let { err ->
-                        Timber.e("DailyCoVoipSdkClient: failed to start recording: ${err.msg}")
-                    }
-                    result.success?.let {
-                        Timber.i("DailyCoVoipSdkClient: recording started, stream id=$it")
+                callClient.startRecording { errorMessage ->
+                    if (errorMessage != null) {
+                        Timber.e("DailyCoVoipSdkClient: failed to start recording: $errorMessage")
                     }
                 }
             } else {
@@ -191,15 +191,18 @@ class DailyCoVoipSdkClient(context: Context) : VoipSdkClient {
     override fun isRecordingEnabled(): Boolean = recording
 
     override fun release() {
+        // Each wrapped in its own try/catch, deliberately: removeListener failing must not skip
+        // callClient.release(), and either failing must not skip scope.cancel() below -- a
+        // bailed-out release() here is exactly how the coroutine scope leaks past this call.
         try {
             callClient.removeListener(listener)
         } catch (e: Exception) {
-            Timber.e(e, "DailyCoVoipSdkClient: failed to remove listener")
+            Timber.e(e, "DailyCoVoipSdkClient: failed to remove listener -- leaking it if so")
         }
         try {
             callClient.release()
         } catch (e: Exception) {
-            Timber.e(e, "DailyCoVoipSdkClient: failed to release CallClient")
+            Timber.e(e, "DailyCoVoipSdkClient: failed to release CallClient -- possible native resource leak")
         }
         scope.cancel()
     }

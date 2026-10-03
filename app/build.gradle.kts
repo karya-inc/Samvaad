@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.hilt.android)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -41,6 +43,8 @@ dependencies {
     implementation(project(":samvaad-android"))
     implementation(libs.daily.client)
     implementation(libs.timber)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.android.compiler)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -52,4 +56,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    // Auto-installs via its own manifest-merged ContentProvider, debug builds only -- no
+    // Application-class wiring needed. Watches for retained Activity/Fragment/Service instances;
+    // relevant here given MainActivity.onDestroy() unconditionally tears down ConferencerBinding
+    // on every recreate, including rotation, with no isChangingConfigurations() distinction.
+    debugImplementation(libs.leakcanary.android)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
