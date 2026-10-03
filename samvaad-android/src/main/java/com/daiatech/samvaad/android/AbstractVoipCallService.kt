@@ -184,12 +184,19 @@ abstract class AbstractVoipCallService : Service() {
                 // Recomputed from the timestamp every tick, not incremented -- correct even if
                 // this coroutine is delayed/suspended by the OS.
                 _durationSeconds.value = (System.currentTimeMillis() - startedAt) / 1000
-                _networkQuality.value = try {
+                val newQuality = try {
                     sdkClient?.networkQuality()
                 } catch (e: Exception) {
                     Timber.e(e, "Exception querying VoipSdkClient network quality")
                     null
                 }
+                // Logged on transition into BAD only, not every tick while it stays BAD -- this
+                // ticks every 1s, and re-logging on every tick for the whole span of a bad
+                // connection would flood logcat for no added signal.
+                if (newQuality == NetworkQuality.BAD && _networkQuality.value != NetworkQuality.BAD) {
+                    Timber.e("AbstractVoipCallService: network quality dropped to BAD")
+                }
+                _networkQuality.value = newQuality
                 delay(1_000)
             }
         }
