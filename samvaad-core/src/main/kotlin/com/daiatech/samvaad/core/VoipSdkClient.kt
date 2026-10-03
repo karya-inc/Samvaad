@@ -22,6 +22,13 @@ interface VoipSdkClient {
     fun isMicrophoneEnabled(): Boolean
 
     /**
+     * A graded reading of the current network link, or `null` if none is available -- either no
+     * reading has arrived yet, or this provider doesn't implement the signal at all. The default
+     * `null` means a provider that doesn't support this needs zero boilerplate to opt out.
+     */
+    fun networkQuality(): NetworkQuality? = null
+
+    /**
      * Start or stop cloud recording, where the underlying SDK supports it. Not every provider
      * necessarily does -- a no-op implementation is a valid choice for one that doesn't, same as
      * how a provider without a real mute API could still satisfy [toggleMic] as a no-op.

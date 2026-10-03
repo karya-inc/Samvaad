@@ -7,6 +7,7 @@ import android.os.Binder
 import android.os.IBinder
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
+import com.daiatech.samvaad.core.NetworkQuality
 import com.daiatech.samvaad.core.VoipCallState
 import com.daiatech.samvaad.core.VoipSdkClient
 import com.daiatech.samvaad.core.VoipSdkClientFactory
@@ -63,6 +64,15 @@ abstract class AbstractVoipCallService : Service() {
     private var callStartedAtEpochMillis: Long? = null
     private val _durationSeconds = MutableStateFlow(0L)
     val durationSeconds: StateFlow<Long> = _durationSeconds.asStateFlow()
+
+    // Polled on the same ticker as durationSeconds (ticket: network-health map, "Polling location
+    // and cadence") -- not a separate ticker, since networkQuality() is a cheap cached-field read
+    // and Daily's underlying signal only reports anything meaningful once media is flowing anyway,
+    // the same window duration already covers. Freezes at its last reading on Ended/Error, same as
+    // durationSeconds, rather than resetting to null.
+    private val _networkQuality = MutableStateFlow<NetworkQuality?>(null)
+    val networkQuality: StateFlow<NetworkQuality?> = _networkQuality.asStateFlow()
+
     private var tickerJob: Job? = null
 
     /** Named (not anonymous) so a bound consumer can safely cast to it in onServiceConnected. */
@@ -174,6 +184,12 @@ abstract class AbstractVoipCallService : Service() {
                 // Recomputed from the timestamp every tick, not incremented -- correct even if
                 // this coroutine is delayed/suspended by the OS.
                 _durationSeconds.value = (System.currentTimeMillis() - startedAt) / 1000
+                _networkQuality.value = try {
+                    sdkClient?.networkQuality()
+                } catch (e: Exception) {
+                    Timber.e(e, "Exception querying VoipSdkClient network quality")
+                    null
+                }
                 delay(1_000)
             }
         }

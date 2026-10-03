@@ -1,0 +1,5 @@
+# Network quality is a pull getter on VoipSdkClient, not a StateFlow
+
+`VoipSdkClient` exposes `networkQuality(): NetworkQuality?` as a synchronous getter, matching `isMicrophoneEnabled()`/`isRecordingEnabled()`, rather than a `StateFlow<NetworkQuality>` alongside `callState`. The underlying signal (e.g. Daily.co's `onNetworkStatsUpdated`) is push-based internally, but each adapter just caches the latest value and returns it on demand, the same pattern already used for mic/recording state.
+
+Considered a `StateFlow` property instead, matching `callState`/`durationSeconds`. Rejected: those two are reactive because they're the core call lifecycle every layer must relay without polling. Network quality isn't load-bearing in the same way — a consumer that wants live UI updates gets that one layer up, by having `AbstractVoipCallService`/`ConferencerBinding` poll this getter on a ticker and relay the result as a `StateFlow`, the same way raw duration math became the reactive `durationSeconds` today. Keeping `VoipSdkClient` itself pull-only avoids a second reactive-plumbing pattern in an interface that already has one, for a signal that doesn't need its own.

@@ -2,6 +2,7 @@ package com.daiatech.samvaad.android
 
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
+import com.daiatech.samvaad.core.NetworkQuality
 import com.daiatech.samvaad.core.VoipCallState
 import com.daiatech.samvaad.core.VoipSdkClient
 import com.daiatech.samvaad.core.VoipSdkClientFactory
@@ -30,6 +31,9 @@ class FakeVoipSdkClient : VoipSdkClient {
     /** When true, [join] throws instead of succeeding -- simulates a buggy SDK adapter. */
     var joinShouldThrow = false
 
+    /** Settable by a test to drive what [networkQuality] returns on the next poll. */
+    var networkQualityToReturn: NetworkQuality? = null
+
     fun emit(state: VoipCallState) {
         _callState.value = state
     }
@@ -54,6 +58,8 @@ class FakeVoipSdkClient : VoipSdkClient {
     }
 
     override fun isRecordingEnabled(): Boolean = recordingEnabled
+
+    override fun networkQuality(): NetworkQuality? = networkQualityToReturn
 
     override fun release() {
         releaseCallCount++

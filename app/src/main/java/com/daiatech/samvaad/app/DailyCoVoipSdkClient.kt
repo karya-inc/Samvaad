@@ -3,11 +3,14 @@ package com.daiatech.samvaad.app
 import android.content.Context
 import co.daily.CallClientListener
 import co.daily.model.CallState
+import co.daily.model.NetworkStats
 import co.daily.model.Participant
 import co.daily.model.ParticipantLeftReason
+import co.daily.model.Threshold
 import co.daily.model.recording.RecordingStatus
 import co.daily.model.streaming.StreamId
 import com.daiatech.samvaad.core.CallRole
+import com.daiatech.samvaad.core.NetworkQuality
 import com.daiatech.samvaad.core.VoipCallState
 import com.daiatech.samvaad.core.VoipSdkClient
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +51,9 @@ class DailyCoVoipSdkClient(
 
     @Volatile
     private var recording = false
+
+    @Volatile
+    private var cachedNetworkQuality: NetworkQuality? = null
 
     private val listener = object : CallClientListener {
         override fun onCallStateUpdated(state: CallState) {
@@ -114,6 +120,10 @@ class DailyCoVoipSdkClient(
 
         override fun onRecordingStopped(streamId: StreamId) {
             recording = false
+        }
+
+        override fun onNetworkStatsUpdated(newNetworkStatistics: NetworkStats) {
+            cachedNetworkQuality = mapDailyThreshold(newNetworkStatistics.threshold)
         }
     }
 
@@ -190,6 +200,8 @@ class DailyCoVoipSdkClient(
 
     override fun isRecordingEnabled(): Boolean = recording
 
+    override fun networkQuality(): NetworkQuality? = cachedNetworkQuality
+
     override fun release() {
         // Each wrapped in its own try/catch, deliberately: removeListener failing must not skip
         // callClient.release(), and either failing must not skip scope.cancel() below -- a
@@ -206,4 +218,16 @@ class DailyCoVoipSdkClient(
         }
         scope.cancel()
     }
+}
+
+/**
+ * Extracted as a pure function, not inlined into the listener: [NetworkStats] has an internal
+ * constructor, so it can't be built in a test fixture -- but [Threshold] is a plain public enum,
+ * and this function's own constants are the only thing a unit test can exercise independently of
+ * the real Daily SDK.
+ */
+internal fun mapDailyThreshold(threshold: Threshold): NetworkQuality = when (threshold) {
+    Threshold.Good -> NetworkQuality.GOOD
+    Threshold.Low -> NetworkQuality.POOR
+    Threshold.VeryLow -> NetworkQuality.BAD
 }
