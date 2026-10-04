@@ -2,6 +2,43 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.maven.publish)
+}
+
+mavenPublishing {
+    coordinates("io.github.karya-inc", "samvaad-android", "0.1.0")
+
+    publishToMavenCentral(automaticRelease = true)
+    signAllPublications()
+
+    pom {
+        name.set("Samvaad Android")
+        description.set("A VoIP/conferencer calling library for Android: provider-agnostic call lifecycle, a foreground-service/Binder layer, duration tracking, and network quality reporting.")
+        inceptionYear.set("2026")
+        url.set("https://github.com/karya-inc/Samvaad")
+
+        licenses {
+            license {
+                name.set("GNU General Public License v3.0")
+                url.set("https://www.gnu.org/licenses/gpl-3.0.html")
+                distribution.set("https://www.gnu.org/licenses/gpl-3.0.html")
+            }
+        }
+
+        developers {
+            developer {
+                id.set("DeepanshuPratik")
+                name.set("Deepanshu Pratik")
+                email.set("deepanshu@karya.in")
+            }
+        }
+
+        scm {
+            url.set("https://github.com/karya-inc/Samvaad")
+            connection.set("scm:git:git://github.com/karya-inc/Samvaad.git")
+            developerConnection.set("scm:git:ssh://git@github.com/karya-inc/Samvaad.git")
+        }
+    }
 }
 
 android {

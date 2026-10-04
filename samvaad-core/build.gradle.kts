@@ -1,5 +1,42 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.maven.publish)
+}
+
+mavenPublishing {
+    coordinates("io.github.karya-inc", "samvaad-core", "0.1.0")
+
+    publishToMavenCentral(automaticRelease = true)
+    signAllPublications()
+
+    pom {
+        name.set("Samvaad Core")
+        description.set("Framework-agnostic VoIP call-lifecycle interfaces that Samvaad's Android implementation builds on.")
+        inceptionYear.set("2026")
+        url.set("https://github.com/karya-inc/Samvaad")
+
+        licenses {
+            license {
+                name.set("GNU General Public License v3.0")
+                url.set("https://www.gnu.org/licenses/gpl-3.0.html")
+                distribution.set("https://www.gnu.org/licenses/gpl-3.0.html")
+            }
+        }
+
+        developers {
+            developer {
+                id.set("DeepanshuPratik")
+                name.set("Deepanshu Pratik")
+                email.set("deepanshu@karya.in")
+            }
+        }
+
+        scm {
+            url.set("https://github.com/karya-inc/Samvaad")
+            connection.set("scm:git:git://github.com/karya-inc/Samvaad.git")
+            developerConnection.set("scm:git:ssh://git@github.com/karya-inc/Samvaad.git")
+        }
+    }
 }
 
 dependencies {
