@@ -95,6 +95,15 @@ abstract class AbstractVoipCallService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
 
+        // A self-targeting PendingIntent a subclass's notification can use for a "hang up"
+        // action (e.g. NotificationCompat.CallStyle's required hangUpIntent) -- mechanism, not
+        // policy: the library provides the action and handling, the consumer builds the actual
+        // PendingIntent/notification style around it.
+        if (intent?.action == ACTION_HANG_UP) {
+            leaveCall()
+            return START_NOT_STICKY
+        }
+
         val providerId = intent?.getStringExtra(EXTRA_PROVIDER_ID)
         val config = intent?.getStringExtra(EXTRA_CONFIG)
         val role = intent?.getStringExtra(EXTRA_ROLE)?.let { roleName ->
@@ -251,5 +260,6 @@ abstract class AbstractVoipCallService : Service() {
         const val EXTRA_PROVIDER_ID = "com.daiatech.samvaad.android.EXTRA_PROVIDER_ID"
         const val EXTRA_CONFIG = "com.daiatech.samvaad.android.EXTRA_CONFIG"
         const val EXTRA_ROLE = "com.daiatech.samvaad.android.EXTRA_ROLE"
+        const val ACTION_HANG_UP = "com.daiatech.samvaad.android.ACTION_HANG_UP"
     }
 }

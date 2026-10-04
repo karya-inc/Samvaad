@@ -92,4 +92,29 @@ class AbstractVoipCallServiceNotificationTest {
 
         controller.destroy()
     }
+
+    @Test
+    fun `ACTION_HANG_UP triggers leave on the active call without re-joining`() {
+        val fakeClient = FakeVoipSdkClient()
+        val controller = Robolectric.buildService(TestVoipCallService::class.java, startIntent())
+        val service = controller.get()
+        service.fakeClient = fakeClient
+
+        controller.create().startCommand(0, 0)
+        fakeClient.emit(VoipCallState.Ongoing)
+        idle()
+        assertEquals(1, fakeClient.joinCallCount)
+
+        val hangUpIntent = Intent(ApplicationProvider.getApplicationContext(), TestVoipCallService::class.java)
+            .setAction(AbstractVoipCallService.ACTION_HANG_UP)
+        controller.withIntent(hangUpIntent).startCommand(0, 1)
+        idle()
+
+        assertEquals(1, fakeClient.leaveCallCount)
+        // Must not re-join just because onStartCommand fired again -- the hang-up intent carries
+        // no join extras, but this also guards against ever wiring that up wrong later.
+        assertEquals(1, fakeClient.joinCallCount)
+
+        controller.destroy()
+    }
 }

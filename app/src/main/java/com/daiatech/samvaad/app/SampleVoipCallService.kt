@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
 import com.daiatech.samvaad.android.AbstractVoipCallService
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.VoipCallState
@@ -55,15 +56,21 @@ class SampleVoipCallService : AbstractVoipCallService() {
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentIntent(contentIntent)
             .setOngoing(true)
-            // The notification tied to an active startForeground() call is already
-            // non-dismissable by the user, regardless of channel importance -- setOngoing(true)
-            // plus the live foreground service are what the OS actually checks before letting a
-            // swipe remove it. CATEGORY_CALL is the separate, real fix here: it's the correct
-            // semantic category for a call notification (affects Do Not Disturb bypass
-            // eligibility and OEM/launcher call-UI treatment), on top of IMPORTANCE_DEFAULT below
-            // taking this out of the shade's "Silent" bucket -- an ongoing call showing as
-            // silent/low-priority was the real, legitimate thing to fix.
+            // setOngoing(true) alone does NOT make this non-dismissable -- since Android 13,
+            // foreground-service notifications are swipe-dismissable by default, and Android 14
+            // closed the setOngoing(true) loophole that used to prevent that too (confirmed on a
+            // real device running API 37). CallStyle (applied below, Ongoing only) is the one
+            // documented exception still protected while the call is live.
+            // CATEGORY_CALL is the correct semantic category for a call notification regardless
+            // (Do Not Disturb bypass eligibility, OEM/launcher call-UI treatment), and
+            // IMPORTANCE_DEFAULT below takes this out of the shade's "Silent" bucket.
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            // This notification is reposted on every call-state transition (updateNotification()
+            // in the library's relay collector) -- without this, CallStyle's heads-up+sound alert
+            // would refire on every single repost instead of just once. Confirmed on a real
+            // device: omitting this caused a notification sound on every transition, not just
+            // when the call actually started ringing.
+            .setOnlyAlertOnce(true)
 
         // Captured once, not re-read via callState.value below -- the StateFlow could
         // theoretically change between two separate reads; branching on a single snapshot keeps
@@ -72,7 +79,7 @@ class SampleVoipCallService : AbstractVoipCallService() {
         // missing-branch bug (VoipCallState.Ended silently falling through to "Ringing...") this
         // guards against now.
         when (callState.value) {
-            VoipCallState.Ongoing ->
+            VoipCallState.Ongoing -> {
                 // setUsesChronometer + setWhen -- the system renders and ticks the elapsed-time
                 // text itself from here on. Deliberately not a hand-rolled per-second repost:
                 // this is the one call site reposting the notification (on this state
@@ -82,6 +89,25 @@ class SampleVoipCallService : AbstractVoipCallService() {
                     .setContentText("In call")
                     .setUsesChronometer(true)
                     .setWhen(callStartedAtEpochMillis ?: System.currentTimeMillis())
+
+                // CallStyle, not just setOngoing(true) -- since Android 13, a foreground
+                // service's notification is swipe-dismissable by the user by default, and
+                // Android 14 closed the setOngoing(true) loophole that used to prevent that too.
+                // CallStyle notifications are the one documented exception still non-dismissable
+                // while the call is live (verified on a real device running API 37).
+                val hangUpIntent = PendingIntent.getService(
+                    this,
+                    0,
+                    Intent(this, SampleVoipCallService::class.java).setAction(AbstractVoipCallService.ACTION_HANG_UP),
+                    PendingIntent.FLAG_IMMUTABLE,
+                )
+                builder.setStyle(
+                    NotificationCompat.CallStyle.forOngoingCall(
+                        Person.Builder().setName("Daily.co call").build(),
+                        hangUpIntent,
+                    ),
+                )
+            }
 
             VoipCallState.Idle, VoipCallState.Dialing, VoipCallState.Incoming, VoipCallState.Connecting ->
                 builder.setContentText("Ringing...")
