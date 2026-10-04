@@ -120,7 +120,7 @@ class ConferencerBinding<M>(
                 )
             VoipCallState.Disconnecting -> ConferencerUiState.Disconnecting(metadata)
             VoipCallState.Ended -> ConferencerUiState.Idle()
-            is VoipCallState.Error -> ConferencerUiState.Error(metadata, state.message)
+            is VoipCallState.Error -> ConferencerUiState.Error(metadata, state.message, cause = state.cause)
         }
 
         if (state == VoipCallState.Ended || state is VoipCallState.Error) {
@@ -156,19 +156,46 @@ class ConferencerBinding<M>(
         val pastIncoming = current !is ConferencerUiState.Idle
         if (sameCall && pastIncoming) return
 
-        bindIfNeeded()
-        _uiState.value = ConferencerUiState.Incoming(metadata)
+        val bindError = bindIfNeeded()
+        _uiState.value = if (bindError != null) {
+            ConferencerUiState.Error(metadata, bindError.message, cause = bindError)
+        } else {
+            ConferencerUiState.Incoming(metadata)
+        }
     }
 
     /** Callee: user tapped Accept. Caller: user tapped Call. */
     fun acceptOrInitiate(metadata: M) {
+        // Guards against a duplicate/racing call into this method -- e.g. a UI double-tap that
+        // lands before Compose recomposes the Join button as disabled. Idle (fresh caller-
+        // initiate) and Incoming (callee accepting a push) are the only states this is ever
+        // legitimately called from; anything else means a call is already in flight for this
+        // binding, and must NOT be clobbered by re-seeding metadata/re-starting the service under
+        // it. Silent, not surfaced as an Error -- the real in-progress call's own state keeps
+        // reporting correctly to the UI, same as it would without this duplicate call.
+        val before = _uiState.value
+        if (before is ConferencerUiState.Connecting ||
+            before is ConferencerUiState.Ongoing ||
+            before is ConferencerUiState.Disconnecting
+        ) {
+            Timber.w(
+                SamvaadAndroidError.AlreadyInCall(),
+                "ConferencerBinding: acceptOrInitiate() called while already in progress -- ignoring",
+            )
+            return
+        }
+
         acceptedCallId = callId(metadata)
         // Seed the metadata now, not just on the callee path (where onIncomingCall already did
         // this): for the caller, this is the *only* place metadata is ever attached, and without
         // it current.metadata() would stay null for the whole call -- every Connecting/Ongoing/
         // Disconnecting/Error state a caller sees would silently carry meta = null.
         _uiState.value = ConferencerUiState.Connecting(metadata)
-        bindIfNeeded()
+        val bindError = bindIfNeeded()
+        if (bindError != null) {
+            _uiState.value = ConferencerUiState.Error(metadata, bindError.message, cause = bindError)
+            return
+        }
         val intent = Intent(appContext, serviceClass).apply {
             putExtra(AbstractVoipCallService.EXTRA_PROVIDER_ID, provider(metadata).id)
             putExtra(AbstractVoipCallService.EXTRA_CONFIG, joinConfig(metadata))
@@ -206,18 +233,26 @@ class ConferencerBinding<M>(
     /**
      * Reattach to an already-running call after this process was killed and restarted with a
      * fresh [ConferencerBinding] instance (e.g. cold start while a call is still alive in the
-     * background service). Returns `false` with no side effect if there's nothing to attach to
-     * -- callers use that to distinguish "genuinely idle" from "a call is running but I'm not
-     * watching it yet" before deciding what to show.
+     * background service). Returns `false` if there's nothing to attach to, or if the service was
+     * running but binding to it failed -- callers use `true`/`false` to distinguish "genuinely
+     * idle" from "a call is running but I'm not watching it yet" before deciding what to show.
+     * There's no call-specific metadata available yet at this point to attach a bind failure to,
+     * so unlike [onIncomingCall]/[acceptOrInitiate] it's reported as a metadata-less Error rather
+     * than dropped silently.
      */
     fun attachIfRunning(): Boolean {
         if (!AbstractVoipCallService.isRunning) return false
-        bindIfNeeded()
+        val bindError = bindIfNeeded()
+        if (bindError != null) {
+            _uiState.value = ConferencerUiState.Error(null, bindError.message, cause = bindError)
+            return false
+        }
         return true
     }
 
-    private fun bindIfNeeded() {
-        if (bound) return
+    /** Returns the failure if `bindService()` failed synchronously, or `null` on success/already-bound. */
+    private fun bindIfNeeded(): SamvaadAndroidError.ServiceBindFailed? {
+        if (bound) return null
         // Set eagerly, before the actual bindService() call, not just once onServiceConnected
         // confirms it -- that callback lands asynchronously, so onIncomingCall() then
         // acceptOrInitiate() shortly after (a real sequence: incoming call, user taps Accept)
@@ -229,12 +264,13 @@ class ConferencerBinding<M>(
             connection,
             Context.BIND_AUTO_CREATE,
         )
-        if (!requested) {
-            // bindService() failed synchronously; nothing pending after all. Leaves `bound` reset
-            // so a later retry (e.g. the next acceptOrInitiate) doesn't permanently skip binding.
-            bound = false
-            Timber.e("ConferencerBinding: bindService() returned false -- call will not start")
-        }
+        if (requested) return null
+        // bindService() failed synchronously; nothing pending after all. Leaves `bound` reset
+        // so a later retry (e.g. the next acceptOrInitiate) doesn't permanently skip binding.
+        bound = false
+        val error = SamvaadAndroidError.ServiceBindFailed()
+        Timber.e(error, "ConferencerBinding: bindService() returned false -- call will not start")
+        return error
     }
 
     private fun unbindIfNeeded() {
@@ -294,7 +330,7 @@ sealed class ConferencerUiState<M> {
         override fun metadata() = meta
     }
 
-    data class Error<M>(val meta: M?, val message: String?) : ConferencerUiState<M>() {
+    data class Error<M>(val meta: M?, val message: String?, val cause: Throwable? = null) : ConferencerUiState<M>() {
         override fun metadata() = meta
     }
 }

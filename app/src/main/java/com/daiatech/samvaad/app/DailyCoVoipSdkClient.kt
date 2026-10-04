@@ -9,8 +9,10 @@ import co.daily.model.ParticipantLeftReason
 import co.daily.model.Threshold
 import co.daily.model.recording.RecordingStatus
 import co.daily.model.streaming.StreamId
+import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
 import com.daiatech.samvaad.core.NetworkQuality
+import com.daiatech.samvaad.core.SamvaadError
 import com.daiatech.samvaad.core.VoipCallState
 import com.daiatech.samvaad.core.VoipSdkClient
 import kotlinx.coroutines.CoroutineScope
@@ -110,8 +112,9 @@ class DailyCoVoipSdkClient(
         }
 
         override fun onError(message: String) {
-            Timber.e("DailyCoVoipSdkClient: Daily SDK error: $message")
-            _callState.value = VoipCallState.Error(message = message)
+            val error = SamvaadError.ProviderError(CallProvider.DAILYCO, message)
+            Timber.e(error, "DailyCoVoipSdkClient: Daily SDK error: $message")
+            _callState.value = VoipCallState.Error(cause = error, message = error.message)
         }
 
         override fun onRecordingStarted(status: RecordingStatus) {
@@ -137,8 +140,9 @@ class DailyCoVoipSdkClient(
         try {
             callClient.join(url = config) { errorMessage ->
                 if (errorMessage != null) {
-                    Timber.e("DailyCoVoipSdkClient: error joining call: $errorMessage")
-                    _callState.value = VoipCallState.Error(message = errorMessage)
+                    val error = SamvaadError.ProviderError(CallProvider.DAILYCO, errorMessage)
+                    Timber.e(error, "DailyCoVoipSdkClient: error joining call: $errorMessage")
+                    _callState.value = VoipCallState.Error(cause = error, message = error.message)
                     return@join
                 }
                 try {
@@ -148,8 +152,9 @@ class DailyCoVoipSdkClient(
                 }
             }
         } catch (e: Exception) {
-            Timber.e(e, "DailyCoVoipSdkClient: exception thrown calling join()")
-            _callState.value = VoipCallState.Error(cause = e, message = e.message)
+            val error = SamvaadError.ProviderError(CallProvider.DAILYCO, e.message, e)
+            Timber.e(error, "DailyCoVoipSdkClient: exception thrown calling join()")
+            _callState.value = VoipCallState.Error(cause = error, message = error.message)
         }
     }
 
@@ -157,13 +162,15 @@ class DailyCoVoipSdkClient(
         try {
             callClient.leave { errorMessage ->
                 if (errorMessage != null) {
-                    Timber.e("DailyCoVoipSdkClient: error leaving call: $errorMessage")
-                    _callState.value = VoipCallState.Error(message = errorMessage)
+                    val error = SamvaadError.ProviderError(CallProvider.DAILYCO, errorMessage)
+                    Timber.e(error, "DailyCoVoipSdkClient: error leaving call: $errorMessage")
+                    _callState.value = VoipCallState.Error(cause = error, message = error.message)
                 }
             }
         } catch (e: Exception) {
-            Timber.e(e, "DailyCoVoipSdkClient: exception thrown calling leave()")
-            _callState.value = VoipCallState.Error(cause = e, message = e.message)
+            val error = SamvaadError.ProviderError(CallProvider.DAILYCO, e.message, e)
+            Timber.e(error, "DailyCoVoipSdkClient: exception thrown calling leave()")
+            _callState.value = VoipCallState.Error(cause = error, message = error.message)
         }
     }
 

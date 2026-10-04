@@ -9,6 +9,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.daiatech.samvaad.core.CallProvider
 import com.daiatech.samvaad.core.CallRole
 import com.daiatech.samvaad.core.NetworkQuality
+import com.daiatech.samvaad.core.SamvaadError
 import com.daiatech.samvaad.core.VoipCallState
 import com.daiatech.samvaad.core.VoipSdkClient
 import com.daiatech.samvaad.core.VoipSdkClientFactory
@@ -122,7 +123,14 @@ abstract class AbstractVoipCallService : Service() {
 
     private fun join(provider: CallProvider, config: String, role: CallRole) {
         if (sdkClient != null) {
-            Timber.w("AbstractVoipCallService: join() called again on an already-joined service instance -- ignoring")
+            // Not surfaced through _callState -- doing so would incorrectly disrupt the real,
+            // already-running call for every observer of that shared state, over a duplicate
+            // request that was never going to replace it anyway (e.g. a redelivered start
+            // command, or a UI double-tap that raced ConferencerBinding's own guard).
+            Timber.w(
+                SamvaadAndroidError.AlreadyInCall(),
+                "AbstractVoipCallService: join() called again on an already-joined service instance -- ignoring",
+            )
             return
         }
         // Called directly from onStartCommand(), not inside scope.launch -- NOT covered by
@@ -132,8 +140,9 @@ abstract class AbstractVoipCallService : Service() {
         val client = try {
             sdkClientFactory.create(provider)
         } catch (e: Exception) {
-            Timber.e(e, "AbstractVoipCallService: sdkClientFactory.create() threw -- cannot join this call")
-            _callState.value = VoipCallState.Error(cause = e, message = e.message)
+            val error = SamvaadError.ClientCreationFailed(provider, e)
+            Timber.e(error, "AbstractVoipCallService: sdkClientFactory.create() threw -- cannot join this call")
+            _callState.value = VoipCallState.Error(cause = error, message = error.message)
             stopSelf()
             return
         }

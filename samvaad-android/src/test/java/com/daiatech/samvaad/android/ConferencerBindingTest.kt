@@ -5,6 +5,7 @@ import com.daiatech.samvaad.core.CallRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
@@ -28,9 +29,14 @@ import org.mockito.kotlin.whenever
  *   redelivery-dedup guard too, since exercising it requires calling `acceptOrInitiate` first.
  *
  * What's left, and what's actually covered here: the CALLEE-only guard on [onIncomingCall], the
- * plain Idle/Incoming state transitions that don't touch the Service/Intent at all, and
+ * plain Idle/Incoming state transitions that don't touch the Service/Intent at all,
  * [ConferencerBinding.attachIfRunning]'s early-return path (verified to never reach `bindService`
- * when no service is running, so it never reaches the `Intent` construction that would throw).
+ * when no service is running, so it never reaches the `Intent` construction that would throw),
+ * and [onIncomingCall]'s `bindService()`-failure path (its `Intent(Context, Class)` construction
+ * never calls `putExtra`, so it doesn't hit the same throwing stub `acceptOrInitiate` does).
+ * [acceptOrInitiate]'s own already-in-progress guard isn't covered here for the same Intent
+ * reason -- reaching a Connecting/Ongoing/Disconnecting state to provoke it requires having
+ * called `acceptOrInitiate` once already.
  */
 class ConferencerBindingTest {
 
@@ -39,6 +45,11 @@ class ConferencerBindingTest {
     private fun newContext(): Context {
         val context = mock<Context>()
         whenever(context.applicationContext).thenReturn(context)
+        // Real bindService() returning false is itself a failure path (now surfaced as
+        // SamvaadAndroidError.ServiceBindFailed) -- an unstubbed mock otherwise defaults to
+        // false here too, which would make every test below hit that failure path instead of
+        // whatever it's actually trying to exercise.
+        whenever(context.bindService(any(), any(), any<Int>())).thenReturn(true)
         return context
     }
 
@@ -85,6 +96,28 @@ class ConferencerBindingTest {
 
         assertFalse(binding.attachIfRunning())
         verify(context, never()).bindService(any<android.content.Intent>(), any(), any<Int>())
+    }
+
+    @Test
+    fun `onIncomingCall surfaces ServiceBindFailed when bindService returns false`() {
+        val context = mock<Context>()
+        whenever(context.applicationContext).thenReturn(context)
+        whenever(context.bindService(any(), any(), any<Int>())).thenReturn(false)
+        val binding = ConferencerBinding<TestMetadata>(
+            context = context,
+            role = CallRole.CALLEE,
+            serviceClass = AbstractVoipCallService::class.java,
+            callId = { it.id },
+            joinConfig = { "config" },
+            provider = { com.daiatech.samvaad.core.CallProvider.DAILYCO },
+        )
+
+        binding.onIncomingCall(TestMetadata(id = "call-1", tag = "first"))
+
+        val state = binding.uiState.value
+        check(state is ConferencerUiState.Error<TestMetadata>)
+        assertEquals("first", state.meta?.tag)
+        assertTrue(state.cause is SamvaadAndroidError.ServiceBindFailed)
     }
 
     @Test

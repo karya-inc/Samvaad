@@ -19,5 +19,8 @@ sealed interface VoipCallState {
     object Ongoing : VoipCallState
     object Disconnecting : VoipCallState
     object Ended : VoipCallState
+    /** [cause] is typically a [SamvaadError] when the failure originated inside this library or a
+     * [VoipSdkClient] implementation, but stays a plain [Throwable] so it can carry anything else
+     * a provider adapter might throw too. */
     data class Error(val cause: Throwable? = null, val message: String? = null) : VoipCallState
 }
