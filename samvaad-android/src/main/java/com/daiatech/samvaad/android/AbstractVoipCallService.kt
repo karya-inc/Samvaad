@@ -1,5 +1,6 @@
 package com.daiatech.samvaad.android
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.Service
 import android.content.Intent
@@ -205,6 +206,7 @@ abstract class AbstractVoipCallService : Service() {
         false
     }
 
+    @SuppressLint("MissingPermission")
     private fun updateNotification() {
         try {
             NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification())

@@ -47,6 +47,18 @@ dependencies {
     testImplementation(libs.junit)
 }
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        // Pinned below JVM 17: at jvmTarget 17+, Kotlin emits a real PermittedSubclasses
+        // attribute for `sealed interface VoipCallState`, which the old ASM bundled in AGP's
+        // Dokka-based javadoc generation (used when samvaad-android publishes, since it depends
+        // on this module) can't parse -- it only understands ASM9's PermittedSubclasses support.
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
 }
