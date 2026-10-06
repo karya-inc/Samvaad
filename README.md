@@ -20,7 +20,7 @@ The library is split into:
 - **Network quality reporting** — a graded `GOOD` / `POOR` / `BAD` reading per call, polled on the same ticker as duration and relayed reactively all the way to your UI, with a simple derived check for "is the network bad right now."
 - **Composable, data-only UI state** — `ConferencerUiState` describes Idle/Incoming/Connecting/Ongoing/Disconnecting/Error; you decide what any of that looks like.
 - **No base class to extend** — `ConferencerBinding` is a plain class you hold as a field and delegate to, so it never fights with your own `ViewModel`, DI-managed controller, or task-runtime base class.
-- **Extendable, typed errors** — `SamvaadError` is open, not sealed: a `VoipSdkClient` implementation or your own backend can add its own failure types under the same hierarchy instead of being stuck with an untyped message string.
+- **Extendable, typed errors** — `SamvaadError` is open, not sealed: a `VoipSdkClient` implementation or your own backend can add its own failure types under the same hierarchy instead of being stuck with an untyped message string. Every error exposes a stable `errorCode` (survives a minified release build, unlike the class name) plus real fields (`provider`, `serviceClass`, ...) instead of only a human-readable sentence.
 - **Tested against real lifecycle scenarios** — Robolectric-backed tests cover the bind/unbind and Service lifecycle edge cases that plain mocks can't reach (double-bind races, unbind-on-terminal-state, process death).
 
 ## Usage

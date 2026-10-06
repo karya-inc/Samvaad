@@ -30,8 +30,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.daiatech.samvaad.android.ConferencerBinding
@@ -118,6 +122,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun JoinMeetingScreen(
     binding: ConferencerBinding<MeetingMetadata>,
@@ -126,13 +131,25 @@ private fun JoinMeetingScreen(
     val uiState by binding.uiState.collectAsState()
     var meetingLink by remember { mutableStateOf("") }
 
+    // testTagsAsResourceId: without this, Modifier.testTag() below is invisible outside a
+    // ComposeTestRule -- it never reaches the Android accessibility tree, so a host-side
+    // UiAutomator dump (what the qa/ E2E suite uses, since it drives real emulators over adb,
+    // not an instrumented test) would see no resource-id at all and have to fall back to
+    // fragile pixel-coordinate taps.
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(24.dp)
+            .semantics { testTagsAsResourceId = true },
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(text = "Samvaad sample", style = MaterialTheme.typography.headlineSmall)
+        // Unambiguous for a test to assert on -- unlike the human-facing strings below, this
+        // never changes wording and never needs updating just because someone tweaks copy.
+        Text(
+            text = uiState::class.simpleName.orEmpty(),
+            modifier = Modifier.testTag("call_state_label"),
+        )
 
         when (val state = uiState) {
             is ConferencerUiState.Idle -> {
@@ -140,12 +157,12 @@ private fun JoinMeetingScreen(
                     value = meetingLink,
                     onValueChange = { meetingLink = it },
                     label = { Text("Daily.co meeting link") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("meeting_link_field"),
                 )
                 Button(
                     onClick = { onJoinRequested(meetingLink) },
                     enabled = meetingLink.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("join_button"),
                 ) {
                     Text("Join meeting")
                 }
@@ -153,7 +170,10 @@ private fun JoinMeetingScreen(
 
             is ConferencerUiState.Connecting -> {
                 Text("Connecting to ${state.meta?.meetingLink.orEmpty()} ...")
-                Button(onClick = { binding.declineOrEnd() }, modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { binding.declineOrEnd() },
+                    modifier = Modifier.fillMaxWidth().testTag("cancel_button"),
+                ) {
                     Text("Cancel")
                 }
             }
@@ -188,6 +208,7 @@ private fun JoinMeetingScreen(
                             micEnabled = it
                             binding.toggleMic(it)
                         },
+                        modifier = Modifier.testTag("mic_switch"),
                     )
                 }
 
@@ -199,10 +220,14 @@ private fun JoinMeetingScreen(
                             recordingEnabled = it
                             binding.setRecordingEnabled(it)
                         },
+                        modifier = Modifier.testTag("recording_switch"),
                     )
                 }
 
-                Button(onClick = { binding.declineOrEnd() }, modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { binding.declineOrEnd() },
+                    modifier = Modifier.fillMaxWidth().testTag("leave_button"),
+                ) {
                     Text("Leave call")
                 }
             }
@@ -213,7 +238,10 @@ private fun JoinMeetingScreen(
 
             is ConferencerUiState.Error -> {
                 Text("Error: ${state.message.orEmpty()}")
-                Button(onClick = { binding.declineOrEnd() }, modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { binding.declineOrEnd() },
+                    modifier = Modifier.fillMaxWidth().testTag("dismiss_button"),
+                ) {
                     Text("Dismiss")
                 }
             }

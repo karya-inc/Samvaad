@@ -59,6 +59,11 @@ class ConferencerBinding<M>(
 
     private var acceptedCallId: String? = null
 
+    // Set by declineOrEnd(), right before it optimistically moves _uiState to Idle in
+    // anticipation of leave() winning. Cleared once that's actually confirmed (a terminal
+    // state arrives) or once it's been used to reconcile the ALREADY_CONNECTED race below.
+    private var decliningMetadata: M? = null
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val localBinder = binder as? AbstractVoipCallService.LocalBinder ?: return
@@ -98,13 +103,36 @@ class ConferencerBinding<M>(
 
     private fun onServiceStateChanged(state: VoipCallState) {
         val current = _uiState.value
-        val metadata = current.metadata()
+        var metadata = current.metadata()
 
         // Preserved guard: a transient Idle report must not drop an in-progress or pending call
         // back to the no-call screen.
         val callPending = metadata != null || acceptedCallId != null
         val transientIdle = state is VoipCallState.Idle && callPending
         if (transientIdle) return
+
+        // Race mirroring the matrix's ALREADY_CONNECTED scenario, generalized to this local
+        // architecture with no backend involved: declineOrEnd() already moved _uiState to Idle
+        // (clearing metadata), anticipating leave() would win, but the provider is reporting a
+        // genuinely active state instead -- the call connected before leave() landed. Per the
+        // matrix's own note for this exact race, the caller's app reconciles into in-call mode
+        // rather than being told its cancel "won" when it didn't -- so this reconstructs the
+        // real state using the metadata captured right before declining, instead of silently
+        // rendering (e.g.) an Ongoing screen with no metadata at all.
+        val reconnectMetadata = decliningMetadata
+        val reconnectedAfterDecline = metadata == null && reconnectMetadata != null &&
+            state != VoipCallState.Idle && state != VoipCallState.Ended && state !is VoipCallState.Error
+        if (reconnectedAfterDecline) {
+            Timber.w(
+                SamvaadAndroidError.AlreadyConnected(),
+                "ConferencerBinding: call connected right as it was being declined -- reconciling into the active call",
+            )
+            metadata = reconnectMetadata
+            acceptedCallId = callId(reconnectMetadata)
+        }
+        if (state == VoipCallState.Ended || state is VoipCallState.Error || reconnectedAfterDecline) {
+            decliningMetadata = null
+        }
 
         _uiState.value = when (state) {
             // metadata is always null here: transientIdle above already returned early for
@@ -156,6 +184,9 @@ class ConferencerBinding<M>(
         val pastIncoming = current !is ConferencerUiState.Idle
         if (sameCall && pastIncoming) return
 
+        // A genuinely new call -- any leftover reconciliation state from a previous one is stale.
+        decliningMetadata = null
+
         val bindError = bindIfNeeded()
         _uiState.value = if (bindError != null) {
             ConferencerUiState.Error(metadata, bindError.message, cause = bindError)
@@ -185,6 +216,9 @@ class ConferencerBinding<M>(
             return
         }
 
+        // A genuinely new call -- any leftover reconciliation state from a previous one is stale.
+        decliningMetadata = null
+
         acceptedCallId = callId(metadata)
         // Seed the metadata now, not just on the callee path (where onIncomingCall already did
         // this): for the caller, this is the *only* place metadata is ever attached, and without
@@ -210,6 +244,9 @@ class ConferencerBinding<M>(
 
     fun declineOrEnd() {
         service?.leaveCall()
+        // Captured before clearing -- see the ALREADY_CONNECTED race handling in
+        // onServiceStateChanged() above, which needs this if leave() loses that race.
+        decliningMetadata = _uiState.value.metadata()
         // Preserved guard: do NOT cancel relayJob here -- it must survive to collect this call's
         // transition through to its terminal state (which is what actually unbinds, above).
         acceptedCallId = null
@@ -268,7 +305,7 @@ class ConferencerBinding<M>(
         // bindService() failed synchronously; nothing pending after all. Leaves `bound` reset
         // so a later retry (e.g. the next acceptOrInitiate) doesn't permanently skip binding.
         bound = false
-        val error = SamvaadAndroidError.ServiceBindFailed()
+        val error = SamvaadAndroidError.ServiceBindFailed(serviceClass)
         Timber.e(error, "ConferencerBinding: bindService() returned false -- call will not start")
         return error
     }
