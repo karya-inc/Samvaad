@@ -8,3 +8,9 @@ build/
 .cxx
 local.properties
 .claude/
+
+# qa/ E2E suite: generated logcat captures / screenshots from test runs, and a local venv.
+qa/.artifacts/
+qa/.venv/
+qa/__pycache__/
+
