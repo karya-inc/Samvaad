@@ -72,6 +72,13 @@ def reset_device(dev: Device) -> None:
     time.sleep(1)
 
 
+# After a scenario that joined a call, the provider keeps the (force-stopped) participants in the
+# room for a while. The next scenario would then see those ghosts as "remote participants" and,
+# when they time out, the sample app ends its call ("last remote participant left"). Found live:
+# a scenario's `a` went Idle on its own ~8 s after joining. So wait this long before reusing the room.
+ROOM_DRAIN_S = float(os.environ.get("QA_ROOM_DRAIN_S", 30))
+
+
 class Fleet:
     """The emulators of one session. ensure(["a","b"]) boots whichever are not up yet."""
 
@@ -80,7 +87,12 @@ class Fleet:
         self.keep = keep or os.environ.get("QA_KEEP_EMULATORS") == "1"
         self.emulators: dict[str, EmulatorProcess] = {}
         self.devices: dict[str, Device] = {}
+        self._last_call_activity: float | None = None
         atexit.register(self.shutdown)  # never leave emulators behind on an unexpected exit
+
+    def note_call_activity(self) -> None:
+        """Call after a scenario that joined a call: starts the room-drain clock."""
+        self._last_call_activity = time.monotonic()
 
     def ensure(self, names: list[str]) -> dict[str, Device]:
         missing = [n for n in names if n not in self.devices]
@@ -94,6 +106,11 @@ class Fleet:
                 self.devices[name] = dev
         for n in names:
             reset_device(self.devices[n])
+        if self._last_call_activity is not None:
+            wait = ROOM_DRAIN_S - (time.monotonic() - self._last_call_activity)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_call_activity = None
         return {n: self.devices[n] for n in names}
 
     def logcat_factory(self, name: str, path: Path) -> LogcatCapture:

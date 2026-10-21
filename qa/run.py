@@ -158,6 +158,8 @@ def main(argv: list[str] | None = None) -> int:
                 artifacts_dir=out, meeting_url=meeting_url, repeat=args.repeat, logcat_factory=fleet.logcat_factory,
                 on_step_done=lambda r: print(f"  [{r.iteration}.{r.index:>2}] {r.status:<7} {r.text}" + (f"  -> {r.detail}" if r.status == "failed" else ""), flush=True),
             ))
+            if any(st.action == "join_call" for st in s.steps):
+                fleet.note_call_activity()
             md, _ = write_report(result, out)
             print(f"VERDICT {s.name}: {result.verdict}" + (" (expected: negative control)" if s.expect_issue and result.has_issue else ""))
             for f in result.findings:

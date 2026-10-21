@@ -60,6 +60,8 @@ def test_scenario(path: Path, request: pytest.FixtureRequest):
         scenario, devices,
         RunConfig(artifacts_dir=out, meeting_url=meeting_url, repeat=repeat, logcat_factory=fleet.logcat_factory),
     )
+    if any(s.action == "join_call" for s in scenario.steps):
+        fleet.note_call_activity()
     md, _ = write_report(result, out)
 
     summary = "\n".join(f"[{f.severity}] {f.oracle} @step {f.step_index}: {f.message}" for f in result.findings)

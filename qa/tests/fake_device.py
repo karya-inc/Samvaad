@@ -130,7 +130,7 @@ class FakeDevice:
     def swipe_notification(self, title=""):
         present = self.notif  # was it in the shade when the swipe started?
         self._rec("swipe_notification")
-        return present
+        return "fake" if present else None
 
     def kill_process(self, how="force_stop"):
         self._rec("kill_process", how)

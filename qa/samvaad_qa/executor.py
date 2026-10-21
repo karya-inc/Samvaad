@@ -67,6 +67,8 @@ def _leave_call(env, name, dev, args):
         if node is not None:
             dev.tap_resource_id(rid, timeout=2)
             return f"tapped {rid}"
+    if args.get("mode") == "if_present":
+        return "no leave/cancel button on screen: nothing to do"
     raise StepFailure(f"neither leave_button nor cancel_button is on screen (call_state={dev.call_state_label()})")
 
 
@@ -102,8 +104,10 @@ def _kill_process(env, name, dev, args):
 
 
 def _swipe_notification(env, name, dev, args):
-    if not dev.swipe_notification():
-        raise StepFailure("the call notification is not in the notification shade, nothing to swipe")
+    method = dev.swipe_notification()
+    if not method:
+        raise StepFailure("the app has no notification posted, nothing to swipe")
+    return f"swiped (row located via {method})"
 
 
 def _tap(env, name, dev, args):

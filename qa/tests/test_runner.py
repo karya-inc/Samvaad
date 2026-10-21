@@ -9,7 +9,6 @@ import pytest
 
 from fake_device import FakeClock, FakeDevice, FakeLog
 from samvaad_qa.compact import parse_flow
-from samvaad_qa.model import ChecksConfig
 from samvaad_qa.report import render_markdown, to_dict, write_report
 from samvaad_qa.runner import RunConfig, run_scenario
 from samvaad_qa.schema import parse_scenario_text

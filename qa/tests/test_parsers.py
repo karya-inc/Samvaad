@@ -73,3 +73,15 @@ def test_notification_records():
     )
     assert len(au.parse_notification_records(dump, PKG)) == 1
     assert au.parse_notification_records(dump, "com.nothing") == []
+
+
+CALL_RECORD = "(0x1: pkg=com.daiatech.samvaad.app user=UserHandle{0} id=4210 tag=null importance=3 key=0|com.daiatech.samvaad.app|4210|null|10217: Notification(channel=samvaad_sample_calls_v2 shortcut=null flags=ONGOING_EVENT|ONLY_ALERT_ONCE|NO_CLEAR|FOREGROUND_SERVICE color=0x0 category=call vis=PRIVATE))"
+LEAKCANARY_RECORD = "(0x2: pkg=com.daiatech.samvaad.app user=UserHandle{0} id=2131230808 tag=null importance=2 key=0|com.daiatech.samvaad.app|2131230808|null|10217: Notification(channel=LEAKCANARY_LOW shortcut=null flags=AUTO_CANCEL|LOCAL_ONLY color=0x0 groupKey=g:LEAKCANARY_LOW vis=PRIVATE))"
+
+
+def test_call_notification_is_told_apart_from_the_apps_other_notifications():
+    assert au.is_call_notification(CALL_RECORD)
+    assert not au.is_call_notification(LEAKCANARY_RECORD)  # same package, not the call
+    dump = "  NotificationRecord" + LEAKCANARY_RECORD + "\n  NotificationRecord" + CALL_RECORD + "\n"
+    blocks = au.parse_notification_records(dump, PKG)
+    assert [au.is_call_notification(b) for b in blocks] == [False, True]

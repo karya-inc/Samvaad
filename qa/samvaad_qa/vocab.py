@@ -146,7 +146,13 @@ ROTATE_CHOICES = list(adb_utils.ROTATIONS) + ["auto"]
 DEVICE_STEPS = _spec(
     StepSpec("launch_app", "Start the app like the launcher icon does (cold start if the process is gone, otherwise resume) and wait for its UI."),
     StepSpec("join_call", "From the app's Idle screen: type the scenario's meeting URL and tap Join. Does not wait for Connecting/Ongoing (use wait_for)."),
-    StepSpec("leave_call", "Leave through the UI: taps 'Leave call' (Ongoing) or 'Cancel' (Connecting).", aliases=["hang_up"]),
+    StepSpec(
+        "leave_call",
+        "Leave through the UI: taps 'Leave call' (Ongoing) or 'Cancel' (Connecting). With `if_present`, does nothing (instead of failing) when neither button is on screen, e.g. the call already ended by itself.",
+        [ArgSpec("mode", "choice", ["required", "if_present"], default="required")],
+        positional="mode",
+        aliases=["hang_up"],
+    ),
     StepSpec(
         "rotate",
         "Pin the screen orientation (settings user_rotation; 'auto' returns control to the accelerometer).",
@@ -211,7 +217,6 @@ CONDITION_KEYS = {
     "foreground_service": "running | stopped: a foreground ServiceRecord of the app in `dumpsys activity services`",
     "ui": "{id: <resource id>, equals|contains: <text>}  (or a list of these)",
 }
-EXPECT_ONLY_KEYS = {"device", "timeout"}
 
 # Oracle names -> the options each accepts (name -> type). The oracle implementations live in
 # oracles.py; the schema validator only needs the names/options, so they are listed here.

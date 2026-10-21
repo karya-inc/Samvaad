@@ -256,6 +256,14 @@ def parse_notification_records(dumpsys_notification: str, package: str) -> list[
     ]
 
 
+def is_call_notification(record_block: str) -> bool:
+    """True for the foreground-service / call-category notification, False for the app's other
+    notifications. The same package posts more than one (LeakCanary's own 'Found N retained
+    objects' notification lives in the debug build), and counting those once made a clean call
+    end look like a lingering notification."""
+    return bool(re.search(r"flags=\S*FOREGROUND_SERVICE", record_block) or "category=call" in record_block)
+
+
 def parse_wakefulness(dumpsys_power: str) -> str | None:
     """'Awake' / 'Asleep' / 'Dozing' / 'Dreaming' from `dumpsys power`."""
     match = re.search(r"mWakefulness=(\w+)", dumpsys_power)
@@ -345,30 +353,22 @@ class Device:
         self.shell("cmd", "statusbar", "collapse")
 
     def notification_posted(self, tag_substring: str = "") -> bool:
-        """True if this package currently has an active status-bar notification. Checked via
-        `dumpsys notification`, not a UI screenshot -- robust to shade layout/animation."""
+        """True if this package currently has an active *call* notification (foreground-service
+        or call-category; see is_call_notification). Checked via `dumpsys notification`, not a
+        UI screenshot -- robust to shade layout/animation."""
         dump = self.shell("dumpsys", "notification", "--noredact")
-        for block in dump.split("NotificationRecord"):
-            if f"pkg={self.package}" in block and tag_substring in block:
-                return True
-        return False
-
-    def swipe_notification_shade_dismiss_attempt(self) -> None:
-        """Opens the shade and swipes horizontally across the topmost notification's expected
-        position -- the actual swipe-to-dismiss gesture a user performs. Whether it actually
-        disappears is for the caller to check via notification_posted()."""
-        self.expand_notifications()
-        time.sleep(1)
-        # The first notification in an expanded shade sits a short way below the status bar on
-        # every API level this suite targets -- approximate, not pixel-perfect: a real dismiss
-        # gesture doesn't need to hit an exact widget, just register as a horizontal swipe over it.
-        self.shell("input", "swipe", "100", "300", "900", "300", "150")
-        time.sleep(1)
-        self.collapse_notifications()
+        return any(
+            is_call_notification(block) and tag_substring in block
+            for block in parse_notification_records(dump, self.package)
+        )
 
     # -- UiAutomator (resource-id based, NOT pixel coordinates) ------------------------------
 
     def dump_ui(self) -> list[UiNode]:
+        # rm first: a failed dump ("could not get idle state" -- constantly animating UI such as
+        # the call notification's chronometer) leaves the *previous* file in place, and reading
+        # that would silently serve a stale screen.
+        self.shell("rm", "-f", "/sdcard/qa_ui.xml")
         self.shell("uiautomator", "dump", "/sdcard/qa_ui.xml")
         xml_text = self.shell("cat", "/sdcard/qa_ui.xml")
         nodes = []
@@ -436,28 +436,37 @@ class Device:
 
     def clear_field(self, resource_id: str) -> None:
         """Empties a text field: tap it, jump to the end, backspace once per existing character
-        (a single `input keyevent` invocation carries all the key presses, so this stays fast)."""
-        self.tap_resource_id(resource_id)
-        existing = self.text_of_resource_id(resource_id, timeout=3) or ""
-        self.shell("input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * (len(existing) + 2)))
+        (one `input keyevent` invocation carries all the key presses), and verify -- on a busy
+        emulator key events get dropped here too, so repeat until the field reads empty."""
+        for _ in range(6):
+            self.tap_resource_id(resource_id)
+            existing = self.text_of_resource_id(resource_id, timeout=3) or ""
+            if not existing:
+                return
+            self.shell("input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * (len(existing) + 2)))
+        raise AssertionError(f"{self.serial}: could not empty '{resource_id}'")
+
+    def type_text_reliably(self, resource_id: str, text: str, attempts: int = 4, chunk: int = 10) -> None:
+        """Types `text` into a field and reads it back, retrying from an empty field on a
+        mismatch. `adb shell input text` silently drops and even reorders characters on a busy
+        low-end emulator (seen live: a 56-character URL arrived as "tht", and as
+        "609640qa-sim-1792609640"), so the text is sent in short chunks and verified."""
+        for _ in range(attempts):
+            self.clear_field(resource_id)
+            self.tap_resource_id(resource_id)
+            time.sleep(1)  # let the IME come up before typing into it
+            for i in range(0, len(text), chunk):
+                self.input_text(text[i : i + chunk])
+            if self.text_of_resource_id(resource_id, timeout=3) == text:
+                return
+        raise AssertionError(f"{self.serial}: could not type the text into '{resource_id}' reliably "
+                             f"(field shows '{self.text_of_resource_id(resource_id, timeout=3)}')")
 
     def join_meeting(self, meeting_url: str) -> None:
         """Types a meeting URL into the sample app's Idle screen and taps Join. Call this from
-        Idle; it does not itself wait for the resulting Connecting/Ongoing transition.
-
-        The typed text is read back and retried if it differs: on a busy low-end emulator
-        `adb shell input text` silently drops characters (seen live: a 56-character URL arrived
-        as "tht"), which otherwise surfaces much later as a confusing 404 from the provider."""
-        for _ in range(4):
-            self.tap_resource_id("meeting_link_field")
-            time.sleep(1)  # let the IME come up before typing into it
-            self.input_text(meeting_url)
-            if self.text_of_resource_id("meeting_link_field", timeout=3) == meeting_url:
-                break
-            self.clear_field("meeting_link_field")
-        else:
-            raise AssertionError(f"{self.serial}: could not type the meeting URL reliably (field shows "
-                                 f"'{self.text_of_resource_id('meeting_link_field', timeout=3)}')")
+        Idle; it does not itself wait for the resulting Connecting/Ongoing transition. A URL left
+        in the field by a previous call is cleared first, not appended to."""
+        self.type_text_reliably("meeting_link_field", meeting_url)
         # The on-screen keyboard covers the Join button on a small low-end display -- dismiss it
         # first rather than guessing a tap position underneath it.
         self.shell("input", "keyevent", "KEYCODE_BACK")
@@ -621,6 +630,7 @@ class Device:
 
     def dump_ui_to(self, out_path: str) -> bool:
         """Saves the raw uiautomator XML to `out_path` (evidence for a finding)."""
+        self.shell("rm", "-f", "/sdcard/qa_ui.xml")
         self.shell("uiautomator", "dump", "/sdcard/qa_ui.xml")
         self.adb("pull", "/sdcard/qa_ui.xml", out_path, timeout=30)
         return Path(out_path).exists()
@@ -629,10 +639,19 @@ class Device:
         match = re.search(r"(\d+)x(\d+)", self.shell("wm", "size"))
         return (int(match.group(1)), int(match.group(2))) if match else (480, 800)
 
-    def swipe_notification(self, title: str = "Samvaad sample call") -> bool:
-        """Opens the shade and swipes the row whose title contains `title` horizontally across
-        its width -- the real swipe-to-dismiss gesture. Returns False if no such row was found
-        (nothing was swiped). Whether it vanished is for the caller to check."""
+    def swipe_notification(self, title: str = "Samvaad sample call") -> str | None:
+        """Opens the shade and swipes the call notification horizontally across its width -- the
+        real swipe-to-dismiss gesture. Returns how the row was located ('uiautomator' or
+        'fallback'), or None if the app has no notification to swipe (nothing was swiped).
+        Whether it vanished is for the caller to check.
+
+        While a call is Ongoing the notification carries a ticking chronometer, and `uiautomator
+        dump` then fails ("could not get idle state") on the shade. So the row is looked up via
+        uiautomator when that works, and otherwise at a fixed fraction of the screen height
+        (0.34: where the first shade row sits on the 480x800 AVDs; the call notification is the
+        first row because it is an ongoing call-category notification)."""
+        if not self.notification_posted():
+            return None
         self.expand_notifications()
         time.sleep(1)
         nodes = self.dump_ui()
@@ -643,26 +662,31 @@ class Device:
             for t in titled:
                 if row.bounds[0] <= t.bounds[0] and row.bounds[1] <= t.bounds[1] and t.bounds[2] <= row.bounds[2] and t.bounds[3] <= row.bounds[3]:
                     target = row
-        if target is None:
-            self.collapse_notifications()
-            return False
-        left, top, right, bottom = target.bounds
-        y = (top + bottom) // 2
+        width, height = self.screen_size()
+        if target is not None:
+            left, top, right, bottom = target.bounds
+            y, method = (top + bottom) // 2, "uiautomator"
+        else:
+            left, right, y, method = 16, width - 16, int(height * 0.34), "fallback"
         self.shell("input", "swipe", str(left + 20), str(y), str(right - 4), str(y), "150")
         time.sleep(1)
         self.collapse_notifications()
-        return True
+        return method
 
     def tap_notification(self, title: str = "Samvaad sample call") -> bool:
-        """Opens the shade and taps the notification titled `title` (what a user does to return
-        to the call). False if it isn't in the shade."""
+        """Opens the shade and taps the app's notification (what a user does to return to the
+        call). False if the app has no notification. Same uiautomator-or-fixed-position lookup,
+        and the same reason for it, as swipe_notification()."""
+        if not self.notification_posted():
+            return False
         self.expand_notifications()
         time.sleep(1)
-        node = self.find_by_text(title, timeout=3, contains=True)
-        if node is None:
-            self.collapse_notifications()
-            return False
-        x, y = node.center
+        node = self.find_by_text(title, timeout=2, contains=True)
+        if node is not None:
+            x, y = node.center
+        else:
+            width, height = self.screen_size()
+            x, y = width // 2, int(height * 0.34)
         self.shell("input", "tap", str(x), str(y))
         return True
 
@@ -673,6 +697,10 @@ class Device:
 
 
 # -- logcat capture / LeakCanary parsing ---------------------------------------------------
+
+
+# Timber tags (= class names) of the library and sample app.
+APP_LOG_TAGS = [f"{tag}:V" for tag in ("ConferencerBinding", "AbstractVoipCallService", "SampleVoipCallService", "DailyCoVoipSdkClient", "DailyCoVoipSdkClient$listener")]
 
 
 class LogcatCapture:
@@ -693,7 +721,11 @@ class LogcatCapture:
             # crashes via the DEBUG tag).
             # `-v time` (not brief): a per-line device timestamp, which is what lets a finding
             # say *when* something happened, not just that it did.
-            [_bin("adb"), "-s", serial, "logcat", "-v", "time", "LeakCanary:V", "System.err:W", "*:E"],
+            # The library's/sample's own Timber tags at full verbosity: low volume, and what makes
+            # "why did the call end?" answerable from a report. QA_LOGCAT_FILTERS appends more
+            # logcat filter specs (e.g. "OkHttp:V") for a one-off diagnosis.
+            [_bin("adb"), "-s", serial, "logcat", "-v", "time", "LeakCanary:V", "System.err:W", *APP_LOG_TAGS,
+             *os.environ.get("QA_LOGCAT_FILTERS", "").split(), "*:E"],
             stdout=self._file,
             stderr=subprocess.DEVNULL,
         )

@@ -19,7 +19,6 @@ from .vocab import (
     CALL_STATES,
     CONDITION_KEYS,
     DEVICE_STEPS,
-    EXPECT_ONLY_KEYS,
     ORACLE_OPTIONS,
     ArgError,
     normalize_args,
