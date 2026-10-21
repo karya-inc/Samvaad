@@ -1,0 +1,19 @@
+name: rotate-then-power-button-during-call
+description: "User report: opened app, placed a call, rotated the screen, pressed the power button; call UI broke"
+tags: [rotation, power]
+devices: [a, b]         # b is the helper participant: the sample app only reaches Ongoing with a 2nd participant in the room
+meeting: env            # env = $QA_MEETING_URL
+repeat: 1
+steps:
+  - a: launch_app
+  - a: join_call
+  - b: launch_app
+  - b: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - a: {rotate: landscape}
+  - a: power_button     # screen off, like the physical button
+  - wait: 5s
+  - a: power_button     # screen back on
+  - a: unlock
+  - expect: {device: a, call_state: Ongoing, notification: posted}
+checks: default

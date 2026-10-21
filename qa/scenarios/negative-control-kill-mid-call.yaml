@@ -1,0 +1,16 @@
+name: negative-control-kill-mid-call
+description: NEGATIVE CONTROL. Kills the app mid-call and then expects the call to still be Ongoing without relaunching, which can never hold; proves the framework reports an issue
+tags: [negative-control, process-death]
+devices: [a, b]
+meeting: env
+repeat: 1
+expect_issue: true           # the run passes only if it finds an issue
+steps:
+  - a: launch_app
+  - a: join_call
+  - b: launch_app
+  - b: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - a: kill_process
+  - expect: {device: a, call_state: Ongoing, notification: posted}
+checks: default

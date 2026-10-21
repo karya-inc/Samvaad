@@ -12,5 +12,6 @@ local.properties
 # qa/ E2E suite: generated logcat captures / screenshots from test runs, and a local venv.
 qa/.artifacts/
 qa/.venv/
-qa/__pycache__/
+qa/**/__pycache__/
+qa/.pytest_cache/
 

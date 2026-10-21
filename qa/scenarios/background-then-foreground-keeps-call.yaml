@@ -1,0 +1,18 @@
+name: background-then-foreground-keeps-call
+description: Background the app mid-call for 5s, bring it back; the call must still be live and notified, with no crash or leak
+tags: [background, migrated]
+devices: [a, b]
+meeting: env
+repeat: 1
+steps:
+  - a: launch_app
+  - a: join_call
+  - b: launch_app
+  - b: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - a: press_home
+  - wait: 5s
+  - a: bring_to_foreground
+  - wait_for: {device: a, call_state: Ongoing, timeout: 15}
+  - expect: {device: a, notification: posted}
+checks: default

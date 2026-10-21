@@ -1,0 +1,16 @@
+name: notification-not-swipe-dismissable
+description: The call notification must survive a swipe-to-dismiss while the call is Ongoing (CallStyle / ACTION_HANG_UP regression)
+tags: [notification, migrated]
+devices: [a, b]
+meeting: env
+repeat: 1
+steps:
+  - a: launch_app
+  - a: join_call
+  - b: launch_app
+  - b: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - expect: {device: a, notification: posted}
+  - a: swipe_notification
+  - expect: {device: a, notification: posted, call_state: Ongoing}
+checks: default

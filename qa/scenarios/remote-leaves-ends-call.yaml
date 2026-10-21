@@ -1,0 +1,17 @@
+name: remote-leaves-ends-call
+description: When the only other participant hangs up, the remaining device must end its call too (DailyCoVoipSdkClient logs "last remote participant left -- disconnecting") and clean up service and notification
+tags: [call-lifecycle, participants]
+devices: [a, b]
+meeting: env
+repeat: 1
+steps:
+  - a: launch_app
+  - a: join_call
+  - b: launch_app
+  - b: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - wait_for: {device: b, call_state: Ongoing, timeout: 45}
+  - a: leave_call
+  - wait_for: {device: b, call_state: Idle, timeout: 30}
+  - expect: {device: b, foreground_service: stopped, notification: absent}
+checks: default
