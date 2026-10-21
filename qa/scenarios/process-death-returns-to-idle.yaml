@@ -1,0 +1,19 @@
+name: process-death-returns-to-idle
+description: Genuine process death (force-stop) mid-call, then relaunch; the app must come back to a clean Idle screen, never a stale in-call UI
+tags: [process-death, migrated]
+devices: [a, b]
+meeting: env
+repeat: 1
+steps:
+  - a: launch_app
+  - a: join_call
+  - b: launch_app
+  - b: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - expect: {device: a, process: alive}
+  - a: kill_process            # force-stop; `am kill` is ignored while a foreground service runs
+  - expect: {device: a, process: dead}
+  - a: launch_app
+  - wait_for: {device: a, call_state: Idle, timeout: 15}
+  - expect: {device: a, foreground_service: stopped, notification: absent}
+checks: default

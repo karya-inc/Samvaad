@@ -434,16 +434,34 @@ class Device:
 
     # -- app-specific flow (MainActivity's test tags) ---------------------------------------
 
+    def clear_field(self, resource_id: str) -> None:
+        """Empties a text field: tap it, jump to the end, backspace once per existing character
+        (a single `input keyevent` invocation carries all the key presses, so this stays fast)."""
+        self.tap_resource_id(resource_id)
+        existing = self.text_of_resource_id(resource_id, timeout=3) or ""
+        self.shell("input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * (len(existing) + 2)))
+
     def join_meeting(self, meeting_url: str) -> None:
         """Types a meeting URL into the sample app's Idle screen and taps Join. Call this from
-        Idle; it does not itself wait for the resulting Connecting/Ongoing transition."""
-        self.tap_resource_id("meeting_link_field")
-        self.input_text(meeting_url)
+        Idle; it does not itself wait for the resulting Connecting/Ongoing transition.
+
+        The typed text is read back and retried if it differs: on a busy low-end emulator
+        `adb shell input text` silently drops characters (seen live: a 56-character URL arrived
+        as "tht"), which otherwise surfaces much later as a confusing 404 from the provider."""
+        for _ in range(4):
+            self.tap_resource_id("meeting_link_field")
+            time.sleep(1)  # let the IME come up before typing into it
+            self.input_text(meeting_url)
+            if self.text_of_resource_id("meeting_link_field", timeout=3) == meeting_url:
+                break
+            self.clear_field("meeting_link_field")
+        else:
+            raise AssertionError(f"{self.serial}: could not type the meeting URL reliably (field shows "
+                                 f"'{self.text_of_resource_id('meeting_link_field', timeout=3)}')")
         # The on-screen keyboard covers the Join button on a small low-end display -- dismiss it
         # first rather than guessing a tap position underneath it.
         self.shell("input", "keyevent", "KEYCODE_BACK")
         self.tap_resource_id("join_button")
-
 
     # -- extensions for the scenario DSL (qa/samvaad_qa/) ------------------------------------
 

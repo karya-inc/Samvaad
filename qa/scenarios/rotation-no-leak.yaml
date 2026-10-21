@@ -1,0 +1,22 @@
+name: rotation-no-leak
+description: Two devices join the same call and rotate; the call must survive and LeakCanary must confirm no leak (the original manual investigation's main scenario)
+tags: [rotation, leak, migrated]
+devices: [a, b]
+meeting: env
+repeat: 1
+steps:
+  - all: launch_app
+  - all: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - wait_for: {device: b, call_state: Ongoing, timeout: 45}
+  - all: {rotate: landscape}
+  - wait: 2s
+  - all: {rotate: portrait}
+  - wait: 2s
+  - expect: {device: a, call_state: Ongoing}
+  - expect: {device: b, call_state: Ongoing}
+  - all: press_home
+  - wait: 2s
+  - all: bring_to_foreground
+  - wait: 2s
+checks: default           # includes the `leakcanary` and `crash` oracles that replace the old leak_watch asserts
