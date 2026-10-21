@@ -1,0 +1,20 @@
+name: join-leave-stress
+description: Join and leave the same call repeatedly (the stress that originally surfaced the one confirmed leak); every cycle must end in a clean Idle with no service, notification or wake lock left behind, and PSS must not keep growing
+tags: [stress, leak, memory]
+devices: [a, b]
+meeting: env
+repeat: 4                      # memory_growth needs >= 3 iterations to say anything
+steps:
+  - all: launch_app
+  - all: join_call
+  - wait_for: {device: a, call_state: Ongoing, timeout: 45}
+  - wait: 3s
+  - a: leave_call
+  - wait: 8s
+  - b: {leave_call: if_present}  # the sample app may already have ended b's call ("last remote participant left")
+  - wait_for: {device: a, call_state: Idle, timeout: 20}
+  - wait_for: {device: b, call_state: Idle, timeout: 20}
+  - expect: {device: a, foreground_service: stopped, notification: absent, process: alive}
+  - expect: {device: b, foreground_service: stopped, notification: absent, process: alive}
+checks:
+  memory_growth: {max_growth_mb: 40}
